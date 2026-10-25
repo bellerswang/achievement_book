@@ -944,6 +944,52 @@ button:disabled:hover {
   font-weight: 700;
 }
 
+/* cloud backup card */
+.sync-counts {
+  margin: 0.25rem 0 0.5rem;
+  font-size: 1.375rem;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.sync-ok {
+  color: var(--ink);
+}
+
+.sync-pending {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-thickness: 3px;
+  text-underline-offset: 4px;
+}
+
+.sync-line {
+  margin: 0.25rem 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.sync-status {
+  font-weight: 900;
+}
+
+.pbtn-main {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #ffffff;
+  font-weight: 900;
+}
+
+.remind {
+  margin: 0.25rem 0 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 3px dashed var(--ink);
+  border-radius: 0.75rem;
+  font-size: 1.125rem;
+  font-weight: 900;
+}
+
 .mrec {
   margin-top: 0.5rem;
   border-top: 2px solid var(--ink);

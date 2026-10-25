@@ -38,7 +38,15 @@ import {
   importBackup,
   getSetting,
   setSetting,
+  getEvents,
+  getSyncedIds,
+  markSynced,
+  importRemoteEvents,
+  clearSynced,
+  restoreDeleted,
+  countDeleted,
 } from './db.js';
+import { syncCounts } from './events.js';
 import { renderCurve } from './chart.js';
 import { celebrate } from './celebrate.js';
 import { makeDemoEntries } from './seed.js';
@@ -76,6 +84,28 @@ const LOCAL = {
     clearAll: '清空全部',
     reps: '次',
     triesLine: '今天试了 {n} 次',
+    cloud: '☁️ 云备份',
+    backedUp: '已备份 {n} 条',
+    notBackedUp: '未备份 {n} 条',
+    signedOut: '未登录',
+    signIn: '家长用 Google 登录',
+    signOut: '退出登录',
+    syncNow: '立即同步',
+    syncing: '同步中…',
+    lastSync: '上次同步：{t}',
+    syncFailed: '同步失败，稍后会再试',
+    offline: '没有网络，联网后会自动同步',
+    signInFailed: '登录没有成功',
+    restored: '从云端恢复了 {n} 条',
+    persistOn: '本机存储：已保护',
+    persistOff: '本机存储：浏览器可能清理，请定期备份',
+    remindNever: '⏰ 还没导出过备份文件',
+    remindDays: '⏰ 已经 {n} 天没导出备份文件了',
+    lastExport: '上次导出：{t}',
+    importConfirm: '导入备份文件吗？现有记录不会丢失（都会留在记录日志里）。',
+    restoreDeleted: '找回删除的记录（{n} 条）',
+    restoreConfirm: '把删除过的 {n} 条记录都找回来吗？',
+    restoredLocal: '已找回 {n} 条记录',
   },
   en: {
     best: 'Best',
@@ -95,6 +125,28 @@ const LOCAL = {
     clearAll: 'Clear everything',
     reps: 'reps',
     triesLine: '{n} tries today',
+    cloud: '☁️ Cloud backup',
+    backedUp: '{n} backed up',
+    notBackedUp: '{n} not backed up',
+    signedOut: 'Not signed in',
+    signIn: 'Parent: sign in with Google',
+    signOut: 'Sign out',
+    syncNow: 'Sync now',
+    syncing: 'Syncing…',
+    lastSync: 'Last sync: {t}',
+    syncFailed: 'Sync failed, will retry',
+    offline: 'Offline — will sync when back online',
+    signInFailed: 'Sign-in did not work',
+    restored: 'Restored {n} from the cloud',
+    persistOn: 'Device storage: protected',
+    persistOff: 'Device storage: may be cleared by the browser — back up often',
+    remindNever: '⏰ No backup file exported yet',
+    remindDays: '⏰ {n} days since the last backup file',
+    lastExport: 'Last export: {t}',
+    importConfirm: 'Import this backup? Current records are not lost (they stay in the log).',
+    restoreDeleted: 'Bring back deleted records ({n})',
+    restoreConfirm: 'Bring back all {n} deleted records?',
+    restoredLocal: 'Brought back {n} records',
   },
 };
 
@@ -138,6 +190,18 @@ const state = {
   settings: {
     pullup: pullupSettings(getSetting('pullup', {})),
   },
+  sync: {
+    ready: false, // firebase loaded
+    user: null, // { uid, email }
+    busy: false,
+    error: '', // '' | 'failed' | 'offline' | 'signin'
+    backedUp: 0,
+    pending: 0,
+    lastSyncAt: getSetting('lastSyncAt', 0) || 0,
+    lastExportAt: getSetting('lastExportAt', 0) || 0,
+    persisted: null, // true | false | null (unknown)
+    deleted: 0, // real records that are deleted but still in the log
+  },
 };
 
 const IS_DEV = (() => {
@@ -176,6 +240,15 @@ function clamp(n, lo, hi) {
 
 function todayStr() {
   return toDateStr(new Date());
+}
+
+function fmtStamp(ms) {
+  if (!ms) return '–';
+  const d = new Date(ms);
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const day = toDateStr(d);
+  if (day === todayStr()) return `${state.lang === 'en' ? 'today' : '今天'} ${hm}`;
+  return `${fmtDate(day)} ${hm}`;
 }
 
 function parseNum(raw) {
@@ -689,6 +762,66 @@ function manageHtml(ex) {
   </details>`;
 }
 
+const WEEK_MS = 7 * 24 * 3600 * 1000;
+
+function cloudCardHtml() {
+  const sy = state.sync;
+  const counts = sy.user
+    ? `<p class="sync-counts"><span class="sync-ok">✓ ${esc(L('backedUp', { n: sy.backedUp }))}</span>
+        <span class="sync-sep" aria-hidden="true"> / </span>
+        <span class="${sy.pending ? 'sync-pending' : ''}">${esc(L('notBackedUp', { n: sy.pending }))}</span></p>`
+    : `<p class="sync-counts"><span class="sync-pending">${esc(L('notBackedUp', { n: sy.pending }))}</span></p>`;
+
+  let status = '';
+  if (sy.busy) status = L('syncing');
+  else if (sy.error === 'offline') status = L('offline');
+  else if (sy.error === 'failed') status = L('syncFailed');
+  else if (sy.error === 'signin') status = L('signInFailed');
+
+  const account = sy.user
+    ? `<p class="sync-line">${esc(sy.user.email || sy.user.name || '')}</p>
+       <p class="sync-line">${esc(L('lastSync', { t: fmtStamp(sy.lastSyncAt) }))}</p>`
+    : `<p class="sync-line">${esc(L('signedOut'))}</p>`;
+
+  const buttons = sy.user
+    ? `<button type="button" class="pbtn pbtn-main" data-sync-now="1" ${sy.busy ? 'disabled' : ''}>${esc(
+        L('syncNow')
+      )}</button>
+       <button type="button" class="pbtn" data-sign-out="1">${esc(L('signOut'))}</button>`
+    : `<button type="button" class="pbtn pbtn-main" data-sign-in="1" ${sy.busy ? 'disabled' : ''}>${esc(
+        L('signIn')
+      )}</button>`;
+
+  const persist =
+    sy.persisted === true
+      ? `<p class="sync-line muted">${esc(L('persistOn'))}</p>`
+      : sy.persisted === false
+        ? `<p class="sync-line muted">${esc(L('persistOff'))}</p>`
+        : '';
+
+  return `<section class="pcard" aria-live="polite">
+      <h2 class="pcard-title">${esc(L('cloud'))}</h2>
+      ${counts}
+      ${account}
+      ${status ? `<p class="sync-line sync-status">${esc(status)}</p>` : ''}
+      ${buttons}
+      ${persist}
+    </section>`;
+}
+
+function backupReminderHtml() {
+  const real = state.entries.filter((e) => e && e.demo !== true).length;
+  const last = state.sync.lastExportAt;
+  if (last && Date.now() - last < WEEK_MS) {
+    return `<p class="sync-line muted">${esc(L('lastExport', { t: fmtStamp(last) }))}</p>`;
+  }
+  if (!real) return '';
+  const text = last
+    ? L('remindDays', { n: Math.floor((Date.now() - last) / (24 * 3600 * 1000)) })
+    : L('remindNever');
+  return `<p class="remind">${esc(text)}</p>`;
+}
+
 function parentHtml() {
   const pullup = state.settings.pullup;
   const demoCount = state.entries.filter((e) => e && e.demo === true).length;
@@ -738,6 +871,28 @@ function parentHtml() {
       <h1 class="sport-title">${esc(T('parentArea'))}</h1>
     </header>
 
+    ${cloudCardHtml()}
+
+    <section class="pcard">
+      <h2 class="pcard-title">${esc(T('backup'))}</h2>
+      ${backupReminderHtml()}
+      <button type="button" class="pbtn" data-export="1">${esc(T('exportBackup'))}</button>
+      <button type="button" class="pbtn" data-import="1">${esc(T('importBackup'))}</button>
+      <input type="file" accept="application/json,.json" data-import-file="1" hidden />
+      <button type="button" class="pbtn" data-clear-demo="1" ${demoCount ? '' : 'disabled'}>${esc(
+        T('clearDemo')
+      )}</button>
+      <button type="button" class="pbtn" data-clear-all="1">${esc(L('clearAll'))}</button>
+      ${
+        state.sync.deleted
+          ? `<button type="button" class="pbtn" data-restore-deleted="1">${esc(
+              L('restoreDeleted', { n: state.sync.deleted })
+            )}</button>`
+          : ''
+      }
+    </section>
+
+
     <section class="pcard">
       <h2 class="pcard-title">${esc(L('pullupRules'))}</h2>
       ${prowHtml('attempts', T('attemptsPerSession'), String(pullup.attempts), '')}
@@ -762,17 +917,6 @@ function parentHtml() {
         <span>${esc(T('showRope'))}</span>
         <span class="switch" aria-hidden="true"><span class="knob"></span></span>
       </button>
-    </section>
-
-    <section class="pcard">
-      <h2 class="pcard-title">${esc(T('backup'))}</h2>
-      <button type="button" class="pbtn" data-export="1">${esc(T('exportBackup'))}</button>
-      <button type="button" class="pbtn" data-import="1">${esc(T('importBackup'))}</button>
-      <input type="file" accept="application/json,.json" data-import-file="1" hidden />
-      <button type="button" class="pbtn" data-clear-demo="1" ${demoCount ? '' : 'disabled'}>${esc(
-        T('clearDemo')
-      )}</button>
-      <button type="button" class="pbtn" data-clear-all="1">${esc(L('clearAll'))}</button>
     </section>
 
     <section class="pcard">
@@ -1389,6 +1533,7 @@ async function saveRecord() {
   state.entries = state.entries.concat(saved);
   closeSheet();
   render();
+  afterChange();
 
   if (newStamps.length) {
     celebrate(state.celebration);
@@ -1498,6 +1643,9 @@ async function onExportBackup() {
     a.click();
     a.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+    state.sync.lastExportAt = Date.now();
+    setSetting('lastExportAt', state.sync.lastExportAt);
+    render();
   } catch {
     /* ignore */
   }
@@ -1512,13 +1660,14 @@ async function onImportFile(file) {
     toast(T('importFailed'));
     return;
   }
-  if (!window.confirm('导入会替换现有记录，继续吗？')) return;
+  if (!window.confirm(L('importConfirm'))) return;
 
   try {
     const result = await importBackup(text, { mode: 'replace' });
     applyImportedSettings(result.settings);
     state.entries = await getEntries();
     render();
+    afterChange();
     toast(T('importDone', { n: result.count }));
   } catch {
     toast(T('importFailed'));
@@ -1530,7 +1679,22 @@ async function onClearDemo() {
     const n = await clearDemoEntries();
     state.entries = await getEntries();
     render();
+    afterChange();
     toast(T('demoCleared', { n }));
+  } catch {
+    /* ignore */
+  }
+}
+
+async function onRestoreDeleted() {
+  const n = state.sync.deleted;
+  if (!n || !window.confirm(L('restoreConfirm', { n }))) return;
+  try {
+    const done = await restoreDeleted();
+    state.entries = await getEntries();
+    render();
+    afterChange();
+    toast(L('restoredLocal', { n: done }));
   } catch {
     /* ignore */
   }
@@ -1543,19 +1707,22 @@ async function onClearAll() {
   } catch {
     /* ignore */
   }
-  state.entries = [];
+  state.entries = await getEntries().catch(() => []);
   render();
+  afterChange();
 }
 
 async function onLoadDemo() {
   try {
     await clearEntries();
     const records = await bulkAddEntries(makeDemoEntries(todayStr()));
-    state.entries = Array.isArray(records) && records.length ? records : await getEntries();
+    state.entries = await getEntries();
+    void records;
   } catch {
     /* ignore */
   }
   render();
+  afterChange();
 }
 
 async function removeEntry(id) {
@@ -1568,6 +1735,137 @@ async function removeEntry(id) {
   }
   state.entries = state.entries.filter((e) => e && e.id !== id);
   render();
+  afterChange();
+}
+
+/* ------------------------------------------------------------------ */
+/* cloud sync (parents only)                                           */
+/* ------------------------------------------------------------------ */
+
+let syncApi = null; // lazily imported ./sync.js
+let syncTimer = 0;
+const STORE = { getEvents, getSyncedIds, markSynced, importRemoteEvents };
+
+function rerenderParent() {
+  if (state.view === 'parent' && !sheet) render();
+}
+
+async function refreshCounts() {
+  try {
+    const [events, synced] = await Promise.all([getEvents(), getSyncedIds()]);
+    const c = syncCounts(events, synced);
+    state.sync.backedUp = c.backedUp;
+    state.sync.pending = c.pending;
+    state.sync.deleted = await countDeleted();
+  } catch {
+    /* ignore */
+  }
+  rerenderParent();
+}
+
+/** Called after every local change: update counts, then sync soon. */
+function afterChange() {
+  refreshCounts();
+  scheduleSync();
+}
+
+function scheduleSync(delay = 1500) {
+  if (!state.sync.user) return;
+  window.clearTimeout(syncTimer);
+  syncTimer = window.setTimeout(() => runSync(), delay);
+}
+
+async function runSync({ manual = false } = {}) {
+  const sy = state.sync;
+  if (!sy.user || !syncApi || sy.busy) return;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    sy.error = 'offline';
+    rerenderParent();
+    return;
+  }
+  sy.busy = true;
+  if (manual) rerenderParent();
+  try {
+    const res = await syncApi.syncNow(sy.user.uid, STORE);
+    sy.error = '';
+    sy.lastSyncAt = Date.now();
+    setSetting('lastSyncAt', sy.lastSyncAt);
+    if (res.downloaded > 0) {
+      state.entries = await getEntries();
+      sy.busy = false;
+      if (!sheet) render();
+      toast(L('restored', { n: res.downloaded }));
+    }
+  } catch {
+    sy.error = navigator.onLine === false ? 'offline' : 'failed';
+  }
+  sy.busy = false;
+  await refreshCounts();
+}
+
+async function onAuthUser(user) {
+  const sy = state.sync;
+  if (user && getSetting('syncUid', '') !== user.uid) {
+    // Different parent account than last time: re-check everything against it.
+    try {
+      await clearSynced();
+    } catch {
+      /* ignore */
+    }
+    setSetting('syncUid', user.uid);
+  }
+  sy.user = user;
+  if (sy.error === 'signin') sy.error = '';
+  await refreshCounts();
+  if (user) runSync();
+}
+
+async function loadSync() {
+  if (syncApi) return syncApi;
+  const mod = await import('./sync.js');
+  syncApi = mod;
+  try {
+    await mod.watchAuth((user) => onAuthUser(user));
+  } catch (err) {
+    syncApi = null; // firebase failed to load (offline?) — retry later
+    throw err;
+  }
+  state.sync.ready = true;
+  return mod;
+}
+
+async function onSignIn() {
+  try {
+    const mod = await loadSync();
+    await mod.signInParent();
+  } catch (err) {
+    const code = err && err.code;
+    if (code !== 'auth/popup-closed-by-user' && code !== 'auth/cancelled-popup-request') {
+      state.sync.error = navigator.onLine === false ? 'offline' : 'signin';
+    }
+    rerenderParent();
+  }
+}
+
+async function onSignOut() {
+  try {
+    if (syncApi) await syncApi.signOutParent();
+  } catch {
+    /* ignore */
+  }
+}
+
+async function requestPersistentStorage() {
+  try {
+    const sm = navigator.storage;
+    if (!sm || !sm.persist) return;
+    let ok = sm.persisted ? await sm.persisted() : false;
+    if (!ok) ok = await sm.persist();
+    state.sync.persisted = !!ok;
+  } catch {
+    state.sync.persisted = null;
+  }
+  rerenderParent();
 }
 
 /* ------------------------------------------------------------------ */
@@ -1603,6 +1901,26 @@ async function onAppClick(event) {
 
   if (target.closest('[data-toggle-rope]')) {
     onToggleRope();
+    return;
+  }
+
+  if (target.closest('[data-restore-deleted]')) {
+    await onRestoreDeleted();
+    return;
+  }
+
+  if (target.closest('[data-sign-in]')) {
+    await onSignIn();
+    return;
+  }
+
+  if (target.closest('[data-sign-out]')) {
+    await onSignOut();
+    return;
+  }
+
+  if (target.closest('[data-sync-now]')) {
+    await runSync({ manual: true });
     return;
   }
 
@@ -1720,6 +2038,23 @@ async function boot() {
 
   wireGlobal();
   render();
+
+  requestPersistentStorage();
+  refreshCounts();
+  window.addEventListener('online', () => {
+    if (state.sync.error === 'offline') state.sync.error = '';
+    if (syncApi) scheduleSync(500);
+    else if (getSetting('syncUid', '')) loadSync().catch(() => {});
+  });
+  // Only load Firebase in the background if a parent has signed in before;
+  // otherwise it loads when the parent taps "sign in".
+  if (getSetting('syncUid', '')) {
+    window.setTimeout(() => {
+      loadSync().catch(() => {
+        state.sync.error = 'offline';
+      });
+    }, 800);
+  }
 }
 
 boot();

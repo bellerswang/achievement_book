@@ -1,6 +1,12 @@
 // Pure backup / migration helpers for 成就本.
+//
+// Backup schema 3 also carries the full append-only event log (`events`),
+// which is the real source of truth. `entries` is kept as a readable
+// snapshot and for importing older (schema 1–2) backups.
 
-export const SCHEMA_VERSION = 2;
+import { isValidEvent, cleanEvent } from './events.js';
+
+export const SCHEMA_VERSION = 3;
 
 const APP_ID = 'achievement-book';
 const INVALID_BACKUP = '无效的备份文件 / Invalid backup file';
@@ -75,8 +81,8 @@ export function migrateEntries(list, fromVersion) {
   return list.map((entry) => migrateEntry(entry, fromVersion));
 }
 
-export function makeBackup({ entries, settings, now } = {}) {
-  return {
+export function makeBackup({ entries, events, settings, now } = {}) {
+  const out = {
     app: APP_ID,
     schema: SCHEMA_VERSION,
     exportedAt: new Date(now).toISOString(),
@@ -89,6 +95,8 @@ export function makeBackup({ entries, settings, now } = {}) {
       : [],
     settings: isObject(settings) ? { ...settings } : {},
   };
+  if (Array.isArray(events)) out.events = events.filter(isValidEvent).map(cleanEvent);
+  return out;
 }
 
 export function parseBackup(textOrObject) {
@@ -131,7 +139,9 @@ export function parseBackup(textOrObject) {
     }
   }
 
-  return { entries, settings, schema };
+  const events = Array.isArray(raw.events) ? raw.events.filter(isValidEvent).map(cleanEvent) : [];
+
+  return { entries, events, settings, schema };
 }
 
 export function isDemoEntry(entry) {

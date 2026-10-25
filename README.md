@@ -1,6 +1,6 @@
 # 成就本 Achievement Book
 
-May 的成就本 —— 运动模块 v1。纯数值、成长曲线为主角的手机网页应用（PWA），数据只存在本机（IndexedDB）。
+May 的成就本 —— 运动模块 v1。纯数值、成长曲线为主角的手机网页应用（PWA）。记录先写本机（IndexedDB 里的只追加事件日志），家长登录后同步到 Firebase Firestore。
 
 ## 运行
 
@@ -26,7 +26,11 @@ npm run preview  # 预览打包结果
 | --- | --- |
 | `src/presets.js` | 预置运动（拉单杠三关 / 跑步按米 / 跳绳默认隐藏）及指标定义 |
 | `src/metrics.js` | 纯函数派生指标：个人最佳、累计、连续天数、7 点移动平均、较上月、今天尝试次数等（不落库） |
-| `src/db.js` | IndexedDB（`idb`）：`exercises`、`entries` 两个 store；设置存 localStorage |
+| `src/events.js` | 只追加事件日志（纯函数）：事件信封、只存原始数据、replay 还原记录、合并、同步计数 |
+| `src/db.js` | IndexedDB（`idb`）v3：`events`（事实来源）、`synced`（哪些事件已在云端）、旧的 `entries`（v3 前快照，不再改动）；设置存 localStorage |
+| `src/sync.js` | Firebase（懒加载）：家长 Google 登录、上传未同步事件、下载其他设备的事件 |
+| `src/firebase-config.js` | Firebase Web 配置（公开的项目标识，不是密钥） |
+| `firestore.rules` | Firestore 安全规则（合并进项目原有规则） |
 | `src/chart.js` | 手写 SVG 成长曲线与迷你 sparkline（无图表库） |
 | `src/celebrate.js` | 新纪录庆祝动画（星星 / 闪光 / 彩纸）+ 轻震动，不依赖声音 |
 | `src/main.js` | 首页（两个大入口）、运动贴纸本页、记录弹层、家长区 |
@@ -48,3 +52,34 @@ npm run preview  # 预览打包结果
 - 白底、粗黑边框、单一主色 `#0B3D91`，没有浅色底和渐变；状态不只靠颜色（✓ / 📍 / ▲ + 文字）；字号用 rem 跟随系统缩放；尊重「减少动态效果」。
 - 家长区（首页右上角 👪 小按钮）：单杠门槛、庆祝效果、语言、显示跳绳、导出 / 导入备份（JSON）、一键清除演示数据、清空全部、管理（删除）记录。
 - GitHub Pages 打包：`npm run build:pages`（base 为 `/achievement_book/`）。
+
+## 记录不会丢（v5）
+
+**记录才是最重要的，数据结构以后会变。** 所以所有改动都存成不可修改的事件，只追加、不改、不删：
+
+```json
+{ "id": "uuid", "timestamp": "2026-10-25T19:03:00.000+01:00", "sport": "pullup",
+  "eventType": "record.added", "schemaVersion": 1,
+  "payload": { "recordId": "…", "date": "2026-10-25", "values": { "attempts": 5, "sequence": [1,0,1,1,0] } } }
+```
+
+- 固定字段：`id`、带时区偏移的 `timestamp`、`sport`、`eventType`、`schemaVersion`、`payload`。
+- `payload` 只放原始事实：每一下抓杠结果（`sequence`）、悬挂秒数、引体高度 %、跑步距离 / 用时 / 圈数、备注（如杠高、休息）。**从不存** 最好成绩、比率等派生值（抓住几下由 `sequence` 现算）。
+- 事件类型：`record.added`、`record.corrected`（更正是新事件）、`record.deleted`（删除也是新事件）。页面看到的记录 = 按时间 replay 全部事件。
+- 「清空全部」「清除演示数据」「导入备份」都只是追加事件；家长区有「找回删除的记录（N 条）」一键找回。
+- 旧版本（v1/v2）的记录在升级到 IndexedDB v3 时自动补成 `record.added` 事件（保留原创建时间）。
+- 启动时调用 `navigator.storage.persist()` 请求浏览器不要清理本机数据；家长区显示结果。
+
+### 云备份（Firebase）
+
+- 项目 `mercurial-weft-455321-v6`，路径 **`users/{uid}/achievement_events/{eventId}`**。同一项目里其他集合（如语音记录 `records`）完全不碰。
+- 只有家长用 Google 登录；May 不需要登录，离线也能正常记录。登录后每次保存会自动上传，联网时补传；登录新设备会自动把云端的事件下载回来。
+- 家长区显示「✓ 已备份 N 条 / 未备份 M 条」、账号、上次同步时间、「立即同步」。演示数据只留在本机，不上传。
+- 安全规则（`firestore.rules`）：保留项目原有的「客户端默认全部禁止」，只新增：本人可读、可新建；同一事件原样重传允许；修改和删除一律禁止；字段只能是那 6 个。部署：`firebase deploy --only firestore`（先确认线上规则，合并而不是覆盖）。
+- 仓库里只有 Web 配置（公开标识），没有任何服务账号密钥或令牌。
+
+### JSON 备份（第二道保险）
+
+- 「导出备份」：文件里有完整事件日志（`events`）和可读的记录快照（`entries`），schema 3。
+- 「导入备份」：日志合并（并集），备份里有的记录都会回来，现有记录不会丢；旧格式（只有 `entries`）的备份也能导入。
+- 家长区每周提醒：超过 7 天没导出就显示「⏰ 已经 N 天没导出备份文件了」。
