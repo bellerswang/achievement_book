@@ -12,6 +12,7 @@ import {
   runTimeSeries,
   runCompareLast,
   formatDuration,
+  formatDistance,
   formatFaster,
   stamps,
   newStampsForSave,
@@ -234,41 +235,43 @@ describe('formatGrab', () => {
 /* ------------------------------------------------------------------ */
 
 describe('distanceKey', () => {
-  it('rounds to 0.1 and trims trailing zeros', () => {
-    expect(distanceKey(1)).toBe('1');
-    expect(distanceKey(1.0)).toBe('1');
-    expect(distanceKey(0.5)).toBe('0.5');
-    expect(distanceKey(2.5)).toBe('2.5');
-    expect(distanceKey(1.25)).toBe('1.3');
-    expect(distanceKey(2.04)).toBe('2');
+  it('rounds metres to an integer string and rejects non-positive values', () => {
+    expect(distanceKey(400)).toBe('400');
+    expect(distanceKey(400.4)).toBe('400');
+    expect(distanceKey(400.6)).toBe('401');
+    expect(distanceKey(1000)).toBe('1000');
+    expect(distanceKey('200')).toBe('200');
+    expect(distanceKey(0)).toBe('');
+    expect(distanceKey(-1)).toBe('');
+    expect(distanceKey(null)).toBe('');
   });
 });
 
 describe('runBestByDistance', () => {
-  it('keeps the fastest time per distance, earliest wins ties', () => {
-    const e1 = makeEntry('run', '2024-03-01', { distance: 1, duration: 420 });
-    const e2 = makeEntry('run', '2024-03-02', { distance: 1, duration: 400 });
-    const e3 = makeEntry('run', '2024-03-03', { distance: 1, duration: 400 });
-    const e4 = makeEntry('run', '2024-03-01', { distance: 2, duration: 900 });
-    const e5 = makeEntry('run', '2024-03-01', { distance: 0.5, duration: 0 });
+  it('keeps the fastest time per metre distance, earliest wins ties', () => {
+    const e1 = makeEntry('run', '2024-03-01', { distance: 400, duration: 420 });
+    const e2 = makeEntry('run', '2024-03-02', { distance: 400, duration: 400 });
+    const e3 = makeEntry('run', '2024-03-03', { distance: 400, duration: 400 });
+    const e4 = makeEntry('run', '2024-03-01', { distance: 800, duration: 900 });
+    const e5 = makeEntry('run', '2024-03-01', { distance: 100, duration: 0 });
 
     const best = runBestByDistance(RUN, [e1, e2, e3, e4, e5]);
-    expect(best['1']).toEqual({ seconds: 400, date: '2024-03-02', entryId: e2.id });
-    expect(best['2'].seconds).toBe(900);
-    expect(best['0.5']).toBeUndefined();
-    expect(runDistances(RUN, [e1, e2, e3, e4, e5])).toEqual([1, 2]);
+    expect(best['400']).toEqual({ seconds: 400, date: '2024-03-02', entryId: e2.id });
+    expect(best['800'].seconds).toBe(900);
+    expect(best['100']).toBeUndefined();
+    expect(runDistances(RUN, [e1, e2, e3, e4, e5])).toEqual([400, 800]);
   });
 });
 
 describe('runTimeSeries', () => {
-  it('returns daily minimum seconds for one distance', () => {
+  it('returns daily minimum seconds for one metre distance', () => {
     const entries = [
-      makeEntry('run', '2024-03-01', { distance: 1, duration: 430 }),
-      makeEntry('run', '2024-03-01', { distance: 1, duration: 410 }),
-      makeEntry('run', '2024-03-02', { distance: 1, duration: 420 }),
-      makeEntry('run', '2024-03-01', { distance: 2, duration: 900 }),
+      makeEntry('run', '2024-03-01', { distance: 400, duration: 430 }),
+      makeEntry('run', '2024-03-01', { distance: 400, duration: 410 }),
+      makeEntry('run', '2024-03-02', { distance: 400, duration: 420 }),
+      makeEntry('run', '2024-03-01', { distance: 800, duration: 900 }),
     ];
-    expect(runTimeSeries(RUN, entries, 1)).toEqual([
+    expect(runTimeSeries(RUN, entries, 400)).toEqual([
       { date: '2024-03-01', value: 410, count: 2 },
       { date: '2024-03-02', value: 420, count: 1 },
     ]);
@@ -277,11 +280,11 @@ describe('runTimeSeries', () => {
 
 describe('runCompareLast', () => {
   it('compares a faster latest run with the previous same-distance run', () => {
-    const a = makeEntry('run', '2024-03-01', { distance: 1, duration: 420 });
-    const b = makeEntry('run', '2024-03-02', { distance: 1, duration: 400 });
+    const a = makeEntry('run', '2024-03-01', { distance: 400, duration: 420 });
+    const b = makeEntry('run', '2024-03-02', { distance: 400, duration: 400 });
     const result = runCompareLast(RUN, [a, b]);
     expect(result).toMatchObject({
-      distance: 1,
+      distance: 400,
       seconds: 400,
       previous: 420,
       fasterBy: 20,
@@ -291,8 +294,8 @@ describe('runCompareLast', () => {
   });
 
   it('returns null fasterBy when slower or equal', () => {
-    const a = makeEntry('run', '2024-03-01', { distance: 1, duration: 400 });
-    const slower = makeEntry('run', '2024-03-02', { distance: 1, duration: 430 });
+    const a = makeEntry('run', '2024-03-01', { distance: 400, duration: 400 });
+    const slower = makeEntry('run', '2024-03-02', { distance: 400, duration: 430 });
     expect(runCompareLast(RUN, [a, slower])).toMatchObject({
       previous: 400,
       fasterBy: null,
@@ -300,7 +303,7 @@ describe('runCompareLast', () => {
       isPB: false,
     });
 
-    const equal = makeEntry('run', '2024-03-03', { distance: 1, duration: 400 });
+    const equal = makeEntry('run', '2024-03-03', { distance: 400, duration: 400 });
     // equal to the most recent same-distance run → no "faster" text
     expect(runCompareLast(RUN, [a, equal])).toMatchObject({
       previous: 400,
@@ -316,10 +319,10 @@ describe('runCompareLast', () => {
   });
 
   it('never compares different distances', () => {
-    const a = makeEntry('run', '2024-03-01', { distance: 1, duration: 400 });
-    const b = makeEntry('run', '2024-03-02', { distance: 2, duration: 500 });
+    const a = makeEntry('run', '2024-03-01', { distance: 400, duration: 400 });
+    const b = makeEntry('run', '2024-03-02', { distance: 800, duration: 500 });
     expect(runCompareLast(RUN, [a, b])).toMatchObject({
-      distance: 2,
+      distance: 800,
       seconds: 500,
       previous: null,
       fasterBy: null,
@@ -337,6 +340,15 @@ describe('runCompareLast', () => {
 /* ------------------------------------------------------------------ */
 /* formatting                                                          */
 /* ------------------------------------------------------------------ */
+
+describe('formatDistance', () => {
+  it('always formats as metres', () => {
+    expect(formatDistance(400, 'zh')).toBe('400 米');
+    expect(formatDistance(400, 'en')).toBe('400 m');
+    expect(formatDistance(1000, 'zh')).toBe('1000 米');
+    expect(formatDistance(1000, 'en')).toBe('1000 m');
+  });
+});
 
 describe('formatDuration', () => {
   it('formats seconds as m:ss', () => {
@@ -451,18 +463,18 @@ describe('stamps', () => {
     });
   });
 
-  it('emits run PB stamps per distance', () => {
-    const r1 = makeEntry('run', '2024-03-01', { distance: 1, duration: 400 });
-    const r2 = makeEntry('run', '2024-03-02', { distance: 1, duration: 380 });
-    const r3 = makeEntry('run', '2024-03-01', { distance: 2, duration: 900 });
+  it('emits run PB stamps per metre distance', () => {
+    const r1 = makeEntry('run', '2024-03-01', { distance: 400, duration: 400 });
+    const r2 = makeEntry('run', '2024-03-02', { distance: 400, duration: 380 });
+    const r3 = makeEntry('run', '2024-03-01', { distance: 800, duration: 900 });
 
     const list = stamps(RUN, [r1, r2, r3]);
-    expect(list.map((s) => s.id)).toEqual(['pb:run:1:380', 'pb:run:2:900']);
+    expect(list.map((s) => s.id)).toEqual(['pb:run:400:380', 'pb:run:800:900']);
     expect(list[0]).toMatchObject({
       kind: 'pb',
       icon: '🏃',
-      label: '1 公里最佳',
-      labelEn: 'Best 1 km',
+      label: '400 米最佳',
+      labelEn: 'Best 400 m',
       valueText: '6:20',
       date: '2024-03-02',
       entryId: r2.id,

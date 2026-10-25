@@ -20,8 +20,9 @@ import {
   filterRange,
   isNewPB,
   formatValue,
+  formatDistance,
 } from '../src/metrics.js';
-import { PRESET_EXERCISES, getMetric } from '../src/presets.js';
+import { PRESET_EXERCISES, getMetric, MAIN_EXERCISE_IDS } from '../src/presets.js';
 import { makeDemoEntries, mulberry32 } from '../src/seed.js';
 import { t } from '../src/i18n.js';
 
@@ -49,10 +50,14 @@ describe('presets', () => {
   it('lists pull-up first and all three sports', () => {
     expect(PRESET_EXERCISES.map((e) => e.id)).toEqual(['pullup', 'run', 'rope']);
     expect(PRESET_EXERCISES[0].icon).toBe('🧗');
+    expect(MAIN_EXERCISE_IDS).toEqual(['pullup', 'run']);
   });
 
-  it('uses the single brand color', () => {
+  it('uses the single brand color and hides rope from the main flow', () => {
     for (const ex of PRESET_EXERCISES) expect(ex.color).toBe('#0B3D91');
+    expect(PULLUP.hidden).toBe(false);
+    expect(RUN.hidden).toBe(false);
+    expect(ROPE.hidden).toBe(true);
   });
 
   it('describes weekly goals', () => {
@@ -78,13 +83,38 @@ describe('presets', () => {
     expect(getMetric(PULLUP, 'level').options).toEqual([25, 50, 75, 100]);
   });
 
-  it('stores running duration in seconds and has no pace metric', () => {
-    expect(RUN.metrics.map((m) => m.key)).toEqual(['distance', 'duration']);
-    expect(getMetric(RUN, 'duration').unitEn).toBe('s');
-    expect(getMetric(RUN, 'duration').higherIsBetter).toBe(false);
+  it('stores running distance in metres and duration in seconds', () => {
+    expect(RUN.metrics.map((m) => m.key)).toEqual(['distance', 'duration', 'laps']);
+
+    const distance = getMetric(RUN, 'distance');
+    expect(distance).toMatchObject({
+      unit: '米',
+      unitEn: 'm',
+      inputType: 'int',
+      step: 100,
+      options: [100, 200, 400, 600, 800, 1000],
+      higherIsBetter: true,
+      primary: true,
+    });
+
+    const duration = getMetric(RUN, 'duration');
+    expect(duration.unitEn).toBe('s');
+    expect(duration.higherIsBetter).toBe(false);
+
+    const laps = getMetric(RUN, 'laps');
+    expect(laps).toMatchObject({
+      label: '圈数',
+      labelEn: 'Laps',
+      unit: '圈',
+      unitEn: 'laps',
+      inputType: 'int',
+      optional: true,
+      higherIsBetter: true,
+    });
+
     expect(getMetric(RUN, 'pace')).toBe(null);
-    expect(RUN.chartMetrics).toEqual(['distance', 'duration']);
-    expect(RUN.defaultChartMetric).toBe('distance');
+    expect(RUN.chartMetrics).toEqual(['duration']);
+    expect(RUN.defaultChartMetric).toBe('duration');
   });
 
   it('leaves exercises without stages without a stages key', () => {
@@ -95,7 +125,7 @@ describe('presets', () => {
   it('getMetric returns null for unknown keys', () => {
     expect(getMetric(RUN, 'nope')).toBe(null);
     expect(getMetric(null, 'distance')).toBe(null);
-    expect(getMetric(RUN, 'distance').unitEn).toBe('km');
+    expect(getMetric(RUN, 'distance').unitEn).toBe('m');
   });
 });
 
@@ -168,9 +198,10 @@ describe('entryValue', () => {
     expect(entryValue(PULLUP, makeEntry('pullup', '2024-03-01', { grabs: 3, attempts: 0 }), 'grabRate')).toBe(null);
   });
 
-  it('reads run duration in seconds', () => {
-    const entry = makeEntry('run', '2024-03-01', { distance: 1, duration: 420 });
-    expect(entryValue(RUN, entry, 'duration')).toBe(420);
+  it('reads run distance in metres and duration in seconds', () => {
+    const entry = makeEntry('run', '2024-03-01', { distance: 400, duration: 132 });
+    expect(entryValue(RUN, entry, 'distance')).toBe(400);
+    expect(entryValue(RUN, entry, 'duration')).toBe(132);
   });
 });
 
@@ -183,7 +214,7 @@ describe('entriesFor', () => {
     const a = makeEntry('pullup', '2024-03-02', { hang: 1 }, 500);
     const b = makeEntry('pullup', '2024-03-01', { hang: 2 }, 400);
     const c = makeEntry('pullup', '2024-03-01', { hang: 3 }, 300);
-    const d = makeEntry('run', '2024-03-01', { distance: 1 }, 100);
+    const d = makeEntry('run', '2024-03-01', { distance: 400 }, 100);
 
     const sorted = entriesFor([a, b, c, d], 'pullup');
     expect(sorted.map((e) => e.id)).toEqual([c.id, b.id, a.id]);
@@ -213,25 +244,25 @@ describe('dailySeries', () => {
     ]);
   });
 
-  it('sums distances per day for running', () => {
+  it('sums distances per day for running in metres', () => {
     const entries = [
-      makeEntry('run', '2024-03-01', { distance: 1, duration: 420 }),
-      makeEntry('run', '2024-03-01', { distance: 2, duration: 840 }),
+      makeEntry('run', '2024-03-01', { distance: 400, duration: 132 }),
+      makeEntry('run', '2024-03-01', { distance: 800, duration: 264 }),
     ];
     const series = dailySeries(RUN, entries, 'distance');
-    expect(series).toEqual([{ date: '2024-03-01', value: 3, count: 2 }]);
+    expect(series).toEqual([{ date: '2024-03-01', value: 1200, count: 2 }]);
   });
 
   it('takes the minimum run duration per day', () => {
     const entries = [
-      makeEntry('run', '2024-03-01', { distance: 1, duration: 420 }),
-      makeEntry('run', '2024-03-01', { distance: 1, duration: 400 }),
-      makeEntry('run', '2024-03-02', { distance: 1, duration: 430 }),
+      makeEntry('run', '2024-03-01', { distance: 400, duration: 132 }),
+      makeEntry('run', '2024-03-01', { distance: 400, duration: 130 }),
+      makeEntry('run', '2024-03-02', { distance: 400, duration: 140 }),
     ];
     const series = dailySeries(RUN, entries, 'duration');
     expect(series).toEqual([
-      { date: '2024-03-01', value: 400, count: 2 },
-      { date: '2024-03-02', value: 430, count: 1 },
+      { date: '2024-03-01', value: 130, count: 2 },
+      { date: '2024-03-02', value: 140, count: 1 },
     ]);
   });
 
@@ -313,9 +344,9 @@ describe('personalBest', () => {
 
   it('picks the min for run duration (lower is better)', () => {
     const entries = [
-      makeEntry('run', '2024-03-01', { distance: 1, duration: 420 }),
-      makeEntry('run', '2024-03-02', { distance: 1, duration: 400 }),
-      makeEntry('run', '2024-03-03', { distance: 1, duration: 430 }),
+      makeEntry('run', '2024-03-01', { distance: 400, duration: 420 }),
+      makeEntry('run', '2024-03-02', { distance: 400, duration: 400 }),
+      makeEntry('run', '2024-03-03', { distance: 400, duration: 430 }),
     ];
     const pb = personalBest(RUN, entries, 'duration');
     expect(pb.value).toBe(400);
@@ -346,7 +377,7 @@ describe('cumulativeTotal', () => {
       cumulativeTotal(PULLUP, [makeEntry('pullup', '2024-03-01', { grabs: 3, attempts: 5 })], 'grabRate')
     ).toBe(null);
     expect(
-      cumulativeTotal(RUN, [makeEntry('run', '2024-03-01', { distance: 1, duration: 420 })], 'duration')
+      cumulativeTotal(RUN, [makeEntry('run', '2024-03-01', { distance: 400, duration: 132 })], 'duration')
     ).toBe(null);
   });
 });
@@ -370,7 +401,7 @@ describe('streakDays', () => {
   it('counts ending yesterday when today is empty', () => {
     const entries = [
       makeEntry('pullup', '2024-03-08', { hang: 5 }),
-      makeEntry('run', '2024-03-09', { distance: 1, duration: 420 }),
+      makeEntry('run', '2024-03-09', { distance: 400, duration: 132 }),
     ];
     expect(streakDays(entries, today)).toBe(2);
   });
@@ -469,8 +500,8 @@ describe('vsLastMonth', () => {
 
   it('treats a lower run duration as an improvement', () => {
     const entries = [
-      ...fillDays('run', { distance: 1, duration: 360 }, '2024-02-10', today),
-      ...fillDays('run', { distance: 1, duration: 480 }, '2024-01-11', '2024-02-09'),
+      ...fillDays('run', { distance: 400, duration: 360 }, '2024-02-10', today),
+      ...fillDays('run', { distance: 400, duration: 480 }, '2024-01-11', '2024-02-09'),
     ];
     const result = vsLastMonth(RUN, entries, 'duration', today);
     expect(result.pct).toBe(25);
@@ -479,8 +510,8 @@ describe('vsLastMonth', () => {
 
   it('reports down when run duration gets worse', () => {
     const entries = [
-      ...fillDays('run', { distance: 1, duration: 480 }, '2024-02-10', today),
-      ...fillDays('run', { distance: 1, duration: 360 }, '2024-01-11', '2024-02-09'),
+      ...fillDays('run', { distance: 400, duration: 480 }, '2024-02-10', today),
+      ...fillDays('run', { distance: 400, duration: 360 }, '2024-01-11', '2024-02-09'),
     ];
     const result = vsLastMonth(RUN, entries, 'duration', today);
     expect(result.direction).toBe('down');
@@ -534,9 +565,9 @@ describe('bestInPeriod', () => {
 
   it('takes the minimum run duration', () => {
     const entries = [
-      makeEntry('run', '2024-03-01', { distance: 1, duration: 420 }),
-      makeEntry('run', '2024-03-05', { distance: 1, duration: 400 }),
-      makeEntry('run', '2024-03-10', { distance: 1, duration: 430 }),
+      makeEntry('run', '2024-03-01', { distance: 400, duration: 420 }),
+      makeEntry('run', '2024-03-05', { distance: 400, duration: 400 }),
+      makeEntry('run', '2024-03-10', { distance: 400, duration: 430 }),
     ];
     expect(bestInPeriod(RUN, entries, 'duration', '2024-03-01', '2024-03-10')).toBe(400);
   });
@@ -547,7 +578,7 @@ describe('attemptsOnDay', () => {
     const entries = [
       makeEntry('pullup', '2024-03-01', { hang: 5 }),
       makeEntry('pullup', '2024-03-01', { hang: 6 }),
-      makeEntry('run', '2024-03-01', { distance: 1, duration: 420 }),
+      makeEntry('run', '2024-03-01', { distance: 400, duration: 132 }),
       makeEntry('pullup', '2024-03-02', { hang: 7 }),
     ];
     expect(attemptsOnDay(entries, 'pullup', '2024-03-01')).toBe(2);
@@ -570,16 +601,16 @@ describe('weeklySummary', () => {
       makeEntry('pullup', '2024-03-03', { grabs: 3, attempts: 5 }),
       makeEntry('pullup', '2024-03-04', { grabs: 4, attempts: 5 }),
       makeEntry('pullup', '2024-03-06', { hang: 7 }),
-      makeEntry('run', '2024-03-05', { distance: 1.5, duration: 630 }),
-      makeEntry('run', '2024-03-06', { distance: 2, duration: 840 }),
-      makeEntry('run', '2024-03-07', { distance: 5, duration: 2100 }),
+      makeEntry('run', '2024-03-05', { distance: 400, duration: 132 }),
+      makeEntry('run', '2024-03-06', { distance: 200, duration: 66 }),
+      makeEntry('run', '2024-03-07', { distance: 800, duration: 264 }),
       makeEntry('rope', '2024-03-04', { reps: 30, duration: 15 }),
       makeEntry('rope', '2024-03-06', { reps: 40, duration: 20 }),
     ];
     const summary = weeklySummary(PRESET_EXERCISES, entries, today);
     expect(summary).toEqual([
       { exerciseId: 'pullup', value: 2 },
-      { exerciseId: 'run', value: 3.5 },
+      { exerciseId: 'run', value: 600 },
       { exerciseId: 'rope', value: 70 },
     ]);
   });
@@ -661,9 +692,9 @@ describe('isNewPB', () => {
   });
 
   it('treats a lower run duration as a new PB', () => {
-    const previous = [makeEntry('run', '2024-03-01', { distance: 1, duration: 420 })];
-    const faster = makeEntry('run', '2024-03-02', { distance: 1, duration: 400 });
-    const slower = makeEntry('run', '2024-03-03', { distance: 1, duration: 430 });
+    const previous = [makeEntry('run', '2024-03-01', { distance: 400, duration: 420 })];
+    const faster = makeEntry('run', '2024-03-02', { distance: 400, duration: 400 });
+    const slower = makeEntry('run', '2024-03-03', { distance: 400, duration: 430 });
     expect(isNewPB(RUN, previous, faster)).toEqual(['duration']);
     expect(isNewPB(RUN, previous, slower)).toEqual([]);
   });
@@ -676,7 +707,7 @@ describe('isNewPB', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* formatValue                                                         */
+/* formatting                                                          */
 /* ------------------------------------------------------------------ */
 
 describe('formatValue', () => {
@@ -684,6 +715,8 @@ describe('formatValue', () => {
   const grabRateMetric = getMetric(PULLUP, 'grabRate');
   const distanceMetric = getMetric(RUN, 'distance');
   const durationMetric = getMetric(RUN, 'duration');
+  const lapsMetric = getMetric(RUN, 'laps');
+  const decimalMetric = { key: 'decimal', inputType: 'decimal' };
 
   it('renders an en dash for missing values', () => {
     expect(formatValue(hangMetric, null)).toBe('–');
@@ -696,12 +729,25 @@ describe('formatValue', () => {
     expect(formatValue(hangMetric, 5.6)).toBe('6');
     expect(formatValue(grabRateMetric, 80)).toBe('80');
     expect(formatValue(durationMetric, 420)).toBe('420');
+    expect(formatValue(distanceMetric, 400.4)).toBe('400');
+    expect(formatValue(distanceMetric, 400.6)).toBe('401');
+    expect(formatValue(lapsMetric, 2.4)).toBe('2');
   });
 
   it('trims decimals to at most 2 places', () => {
-    expect(formatValue(distanceMetric, 5.2)).toBe('5.2');
-    expect(formatValue(distanceMetric, 5.0)).toBe('5');
-    expect(formatValue(distanceMetric, '1.256')).toBe('1.26');
+    expect(formatValue(decimalMetric, 5.2)).toBe('5.2');
+    expect(formatValue(decimalMetric, 5.0)).toBe('5');
+    expect(formatValue(decimalMetric, '1.256')).toBe('1.26');
+  });
+});
+
+describe('formatDistance', () => {
+  it('formats metres in both languages and stays in metres', () => {
+    expect(formatDistance(400, 'zh')).toBe('400 米');
+    expect(formatDistance(400, 'en')).toBe('400 m');
+    expect(formatDistance(1000, 'zh')).toBe('1000 米');
+    expect(formatDistance(1000, 'en')).toBe('1000 m');
+    expect(formatDistance(null, 'zh')).toBe('–');
   });
 });
 
@@ -727,12 +773,20 @@ describe('i18n', () => {
     expect(t('unknown_key_xyz', 'en')).toBe('unknown_key_xyz');
   });
 
-  it('includes the new stage and sticker strings', () => {
+  it('includes the new stage, backup and running strings', () => {
     expect(t('road', 'zh')).toBe('我的成长路');
     expect(t('road', 'en')).toBe('My road');
     expect(t('newSticker', 'zh')).toBe('新贴纸！');
     expect(t('parentSettings', 'en')).toBe('Parent settings');
     expect(t('unlockStage3', 'zh')).toBe('悬挂几秒解锁第3关');
+    expect(t('record', 'en')).toBe('Record');
+    expect(t('meters', 'zh')).toBe('米');
+    expect(t('meters', 'en')).toBe('m');
+    expect(t('laps', 'en')).toBe('Laps');
+    expect(t('importDone', 'zh', { n: 3 })).toBe('已导入 3 条记录');
+    expect(t('importDone', 'en', { n: 3 })).toBe('Imported 3 records');
+    expect(t('demoCleared', 'zh', { n: 2 })).toBe('已清除 2 条演示数据');
+    expect(t('bestTime', 'en')).toBe('Best time');
   });
 });
 
@@ -756,6 +810,12 @@ describe('seed', () => {
     expect(ids.has('pullup')).toBe(true);
     expect(ids.has('run')).toBe(true);
     expect(ids.has('rope')).toBe(true);
+  });
+
+  it('marks every seeded entry as demo data', () => {
+    const entries = makeDemoEntries(today, mulberry32(4));
+    expect(entries.length).toBeGreaterThan(0);
+    for (const entry of entries) expect(entry.demo).toBe(true);
   });
 
   it('stays inside the last 75 days and uses unique ids', () => {
@@ -787,11 +847,22 @@ describe('seed', () => {
     expect(avg(last)).toBeGreaterThan(avg(first));
   });
 
-  it('stores run duration in seconds with a gentle faster trend', () => {
+  it('stores run distance in metres with laps and a gentle faster trend', () => {
     const runs = makeDemoEntries(today, mulberry32(1)).filter((e) => e.exerciseId === 'run');
+    const options = getMetric(RUN, 'distance').options;
+
+    expect(runs.length).toBeGreaterThan(0);
     for (const r of runs) {
+      expect(options.includes(r.values.distance)).toBe(true);
+      expect(Number.isInteger(r.values.distance)).toBe(true);
       expect(r.values.duration).toBeGreaterThan(0);
-      expect(r.values.duration).toBeLessThanOrEqual(r.values.distance * 420 * 1.1 + 1);
+      expect(r.values.duration).toBeLessThanOrEqual(r.values.distance * 0.33 * 1.1 + 1);
+
+      if (r.values.distance >= 200) {
+        expect(r.values.laps).toBe(Math.ceil(r.values.distance / 200));
+      } else {
+        expect(r.values.laps).toBeUndefined();
+      }
     }
   });
 

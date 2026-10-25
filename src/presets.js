@@ -3,6 +3,8 @@
 
 export const PRIMARY_COLOR = '#0B3D91';
 
+export const MAIN_EXERCISE_IDS = ['pullup', 'run'];
+
 export const PULLUP_DEFAULTS = {
   attempts: 5,
   stage1Grabs: 4,
@@ -24,6 +26,7 @@ export const PRESET_EXERCISES = [
     icon: '🧗',
     color: '#0B3D91',
     order: 0,
+    hidden: false,
     aggregation: 'max',
     weekly: { metric: null, mode: 'count' },
     metrics: [
@@ -132,6 +135,7 @@ export const PRESET_EXERCISES = [
     icon: '🏃',
     color: '#0B3D91',
     order: 1,
+    hidden: false,
     aggregation: 'sum',
     weekly: { metric: 'distance', mode: 'sum' },
     metrics: [
@@ -139,14 +143,14 @@ export const PRESET_EXERCISES = [
         key: 'distance',
         label: '距离',
         labelEn: 'Distance',
-        unit: '公里',
-        unitEn: 'km',
-        inputType: 'decimal',
+        unit: '米',
+        unitEn: 'm',
+        inputType: 'int',
         primary: true,
         higherIsBetter: true,
         input: true,
-        step: 0.1,
-        options: [0.5, 1, 2, 3, 5],
+        step: 100,
+        options: [100, 200, 400, 600, 800, 1000],
       },
       {
         key: 'duration',
@@ -160,9 +164,22 @@ export const PRESET_EXERCISES = [
         input: true,
         step: 1,
       },
+      {
+        key: 'laps',
+        label: '圈数',
+        labelEn: 'Laps',
+        unit: '圈',
+        unitEn: 'laps',
+        inputType: 'int',
+        input: true,
+        step: 1,
+        primary: false,
+        higherIsBetter: true,
+        optional: true,
+      },
     ],
-    chartMetrics: ['distance', 'duration'],
-    defaultChartMetric: 'distance',
+    chartMetrics: ['duration'],
+    defaultChartMetric: 'duration',
   },
   {
     id: 'rope',
@@ -171,6 +188,7 @@ export const PRESET_EXERCISES = [
     icon: '🪢',
     color: '#0B3D91',
     order: 2,
+    hidden: true,
     aggregation: 'max',
     weekly: { metric: 'reps', mode: 'sum' },
     metrics: [

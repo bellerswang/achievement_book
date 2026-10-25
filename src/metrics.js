@@ -550,10 +550,10 @@ export function formatGrab(entry) {
 /* running helpers                                                     */
 /* ------------------------------------------------------------------ */
 
-export function distanceKey(km) {
-  const n = toNum(km);
-  if (n === null) return '';
-  return String(roundTo(n, 1));
+export function distanceKey(m) {
+  const n = toNum(m);
+  if (n === null || n <= 0) return '';
+  return String(Math.round(n));
 }
 
 export function runDistances(exercise, entries) {
@@ -565,9 +565,9 @@ export function runDistances(exercise, entries) {
     const run = validRun(entry);
     if (!run) continue;
     const key = distanceKey(run.distance);
-    if (seen.has(key)) continue;
+    if (!key || seen.has(key)) continue;
     seen.add(key);
-    out.push(roundTo(run.distance, 1));
+    out.push(Math.round(run.distance));
   }
 
   out.sort((a, b) => a - b);
@@ -582,6 +582,7 @@ export function runBestByDistance(exercise, entries) {
     const run = validRun(entry);
     if (!run) continue;
     const key = distanceKey(run.distance);
+    if (!key) continue;
     const current = best[key];
 
     if (
@@ -596,8 +597,8 @@ export function runBestByDistance(exercise, entries) {
   return best;
 }
 
-export function runTimeSeries(exercise, entries, km) {
-  const target = distanceKey(km);
+export function runTimeSeries(exercise, entries, m) {
+  const target = distanceKey(m);
   if (!target) return [];
 
   const list = entriesFor(entries, exercise && exercise.id);
@@ -655,7 +656,7 @@ export function runCompareLast(exercise, entries) {
     previous !== null && latestRun.seconds < previous ? previous - latestRun.seconds : null;
 
   return {
-    distance: roundTo(latestRun.distance, 1),
+    distance: Math.round(latestRun.distance),
     seconds: latestRun.seconds,
     previous,
     fasterBy,
@@ -667,6 +668,13 @@ export function runCompareLast(exercise, entries) {
 /* ------------------------------------------------------------------ */
 /* formatting                                                          */
 /* ------------------------------------------------------------------ */
+
+export function formatDistance(m, lang) {
+  const n = toNum(m);
+  if (n === null) return '–';
+  const rounded = Math.round(n);
+  return `${rounded} ${lang === 'en' ? 'm' : '米'}`;
+}
 
 export function formatDuration(sec) {
   const n = toNum(sec);
@@ -835,8 +843,8 @@ export function stamps(exercise, entries, settingsRaw) {
     const bestMap = runBestByDistance(exercise, entries);
     const distances = runDistances(exercise, entries);
 
-    for (const km of distances) {
-      const key = distanceKey(km);
+    for (const m of distances) {
+      const key = distanceKey(m);
       const best = bestMap[key];
       if (!best) continue;
 
@@ -845,8 +853,8 @@ export function stamps(exercise, entries, settingsRaw) {
         id: `pb:run:${key}:${best.seconds}`,
         kind: 'pb',
         icon: '🏃',
-        label: `${key} 公里最佳`,
-        labelEn: `Best ${key} km`,
+        label: `${key} 米最佳`,
+        labelEn: `Best ${key} m`,
         valueText: timeText,
         valueTextEn: timeText,
         date: best.date,

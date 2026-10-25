@@ -2,9 +2,10 @@
 
 import { openDB } from 'idb';
 import { PRESET_EXERCISES } from './presets.js';
+import { migrateEntry, makeBackup, parseBackup } from './backup.js';
 
 const DB_NAME = 'achievement-book';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const SETTINGS_PREFIX = 'ab:';
 
 let dbPromise = null;
@@ -42,7 +43,7 @@ function normalizeEntry(entry) {
 export function openDatabase() {
   if (!dbPromise) {
     dbPromise = openDB(DB_NAME, DB_VERSION, {
-      upgrade(db, oldVersion, _newVersion, tx) {
+      async upgrade(db, oldVersion, _newVersion, tx) {
         if (!db.objectStoreNames.contains('exercises')) {
           db.createObjectStore('exercises', { keyPath: 'id' });
         }
@@ -53,6 +54,14 @@ export function openDatabase() {
         }
         if (oldVersion < 1) {
           seedPresets(tx.objectStore('exercises'));
+        }
+        if (oldVersion >= 1 && oldVersion < 2) {
+          const store = tx.objectStore('entries');
+          let cursor = await store.openCursor();
+          while (cursor) {
+            await cursor.update(migrateEntry(cursor.value, oldVersion));
+            cursor = await cursor.continue();
+          }
         }
       },
       terminated() {
@@ -109,6 +118,61 @@ export async function bulkAddEntries(list) {
   }
   await tx.done;
   return records;
+}
+
+export async function replaceAllEntries(list) {
+  const db = await openDatabase();
+  const tx = db.transaction('entries', 'readwrite');
+  const store = tx.objectStore('entries');
+  await store.clear();
+
+  const records = [];
+  for (const item of list || []) {
+    const record = normalizeEntry(item);
+    records.push(record);
+    await store.put(record);
+  }
+
+  await tx.done;
+  return records;
+}
+
+export async function deleteEntries(ids) {
+  const db = await openDatabase();
+  const tx = db.transaction('entries', 'readwrite');
+  const store = tx.objectStore('entries');
+  let count = 0;
+
+  for (const id of ids || []) {
+    if (id === undefined || id === null) continue;
+    store.delete(id);
+    count += 1;
+  }
+
+  await tx.done;
+  return count;
+}
+
+export async function clearDemoEntries() {
+  const all = await getEntries();
+  const ids = all.filter((entry) => entry && entry.demo === true).map((entry) => entry.id);
+  if (!ids.length) return 0;
+  await deleteEntries(ids);
+  return ids.length;
+}
+
+export async function exportBackup(settings) {
+  const entries = await getEntries();
+  return makeBackup({ entries, settings, now: Date.now() });
+}
+
+export async function importBackup(textOrObj, options = {}) {
+  const parsed = parseBackup(textOrObj);
+  const mode = options && options.mode === 'merge' ? 'merge' : 'replace';
+  const records =
+    mode === 'merge' ? await bulkAddEntries(parsed.entries) : await replaceAllEntries(parsed.entries);
+
+  return { count: records.length, settings: parsed.settings };
 }
 
 export function getSetting(key, fallback) {

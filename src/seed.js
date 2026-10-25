@@ -19,7 +19,7 @@ export function mulberry32(seed) {
 }
 
 const DAYS = 75;
-const RUN_DISTANCES = [1, 1, 1, 2, 0.5, 3];
+const RUN_DISTANCES = [100, 200, 200, 400, 400, 600, 800];
 
 function clamp(v, lo, hi) {
   return Math.min(hi, Math.max(lo, v));
@@ -41,7 +41,7 @@ function dateMs(dateStr) {
  *
  * @param {string} today 'YYYY-MM-DD'
  * @param {() => number} [rng]
- * @returns {Array<{id:string,exerciseId:string,date:string,createdAt:number,values:object}>}
+ * @returns {Array<{id:string,exerciseId:string,date:string,createdAt:number,values:object,demo:true}>}
  */
 export function makeDemoEntries(today, rng = Math.random) {
   const entries = [];
@@ -57,6 +57,7 @@ export function makeDemoEntries(today, rng = Math.random) {
       date,
       createdAt: dateMs(date) + 9 * 3600 * 1000 + attempt * 60 * 1000,
       values,
+      demo: true,
     });
   };
 
@@ -77,10 +78,7 @@ export function makeDemoEntries(today, rng = Math.random) {
         push('pullup', date, { grabs, attempts: 5 }, 0);
       } else if (i <= 60) {
         // Stage 2: hang 3 -> 18s, crossing 10s around day 50.
-        const base =
-          i <= 50
-            ? 3 + 7 * ((i - 25) / 25)
-            : 10 + 8 * ((i - 50) / 10);
+        const base = i <= 50 ? 3 + 7 * ((i - 25) / 25) : 10 + 8 * ((i - 50) / 10);
         const jitter = (rng() - 0.5) * 1.2;
         const hang = Math.round(clamp(base + jitter, 2, 20));
         push('pullup', date, { hang }, 0);
@@ -103,12 +101,14 @@ export function makeDemoEntries(today, rng = Math.random) {
       }
     }
 
-    // ---- running: PB per distance, seconds, trending ~10% faster ----
+    // ---- running: metres, seconds, trending ~10% faster ----
     if (rng() < 0.55) {
       const distance = RUN_DISTANCES[Math.floor(rng() * RUN_DISTANCES.length)];
       const paceFactor = (1 - 0.1 * progress) * (1 + (rng() - 0.5) * 0.1);
-      const duration = Math.max(1, Math.round(distance * 420 * paceFactor));
-      push('run', date, { distance, duration }, 0);
+      const duration = Math.max(1, Math.round(distance * 0.33 * paceFactor));
+      const values = { distance, duration };
+      if (distance >= 200) values.laps = Math.ceil(distance / 200);
+      push('run', date, values, 0);
     }
 
     // ---- jump rope: as before, duration in seconds ----
@@ -122,7 +122,7 @@ export function makeDemoEntries(today, rng = Math.random) {
   // Guarantee at least one record per exercise (keeps the UI happy).
   const fallback = {
     pullup: () => ({ grabs: 1, attempts: 5 }),
-    run: () => ({ distance: 1, duration: 420 }),
+    run: () => ({ distance: 400, duration: 132, laps: 2 }),
     rope: () => ({ reps: 40, duration: 16 }),
   };
 
