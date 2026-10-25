@@ -1,12 +1,10 @@
-/* 成就本 — high-contrast, low-vision friendly UI. */
+/* 成就本 — sticker-book UI. Thick outlines, white paper, high contrast. */
 
 :root {
   --primary: #0B3D91;
   --ink: #111111;
   --label: #333333;
   --green: #0A6B2E;
-  --card: #F3F5F9;
-  --line: #DDE2EA;
   --tab-h: max(64px, 4.25rem);
   --big-font: ui-rounded, "SF Pro Rounded", "SF Mono", ui-monospace, monospace;
   --body-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB",
@@ -42,12 +40,14 @@ h2,
 h3,
 p,
 ul,
+ol,
 li {
   margin: 0;
   padding: 0;
 }
 
-ul {
+ul,
+ol {
   list-style: none;
 }
 
@@ -72,7 +72,7 @@ button:disabled {
 .big {
   font-family: var(--big-font);
   font-variant-numeric: tabular-nums;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1.05;
   letter-spacing: -0.01em;
 }
@@ -91,7 +91,7 @@ button:disabled {
 
 .label {
   font-size: 1.125rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--label);
 }
 
@@ -117,7 +117,7 @@ button:disabled {
 
 .screen-title {
   font-size: 1.125rem;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--ink);
 }
 
@@ -125,9 +125,9 @@ button:disabled {
   width: 56px;
   height: 56px;
   min-width: 56px;
-  border: 0;
+  border: 3px solid var(--ink);
   border-radius: 999px;
-  background: transparent;
+  background: #ffffff;
   color: var(--ink);
   font-size: 1.6rem;
   line-height: 1;
@@ -143,7 +143,7 @@ button:disabled {
   background: transparent;
   color: var(--ink);
   font-size: 1.125rem;
-  font-weight: 600;
+  font-weight: 700;
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
@@ -153,6 +153,10 @@ button:disabled {
 .section-label {
   display: block;
   margin: 1.5rem 0 0.75rem;
+}
+
+.no-data-line {
+  margin: 0.75rem 0 1.5rem;
 }
 
 /* ---------- week overview ---------- */
@@ -173,14 +177,17 @@ button:disabled {
   white-space: nowrap;
 }
 
-/* ---------- curve card ---------- */
+/* ---------- cards ---------- */
 
 .card {
-  background: var(--card);
-  border-radius: 1.5rem;
-  padding: 0.75rem 1.125rem 0.75rem;
+  background: #ffffff;
+  border: 3px solid var(--ink);
+  border-radius: 1.25rem;
+  padding: 0.75rem 1.125rem;
   margin: 1.5rem 0;
 }
+
+/* ---------- curve card ---------- */
 
 .curve-head {
   display: flex;
@@ -195,7 +202,7 @@ button:disabled {
   align-items: baseline;
   gap: 0.35rem;
   font-size: 1.125rem;
-  font-weight: 600;
+  font-weight: 800;
   color: var(--ink);
   padding-top: 0.75rem;
 }
@@ -206,7 +213,7 @@ button:disabled {
 }
 
 .ex-icon-lg {
-  font-size: 2rem;
+  font-size: 2.25rem;
 }
 
 .curve-metric {
@@ -215,16 +222,16 @@ button:disabled {
 
 .curve-nav {
   display: flex;
-  gap: 0;
+  gap: 0.35rem;
   flex: 0 0 auto;
 }
 
 .nav-btn {
   width: 56px;
   height: 56px;
-  border: 0;
+  border: 3px solid var(--ink);
   border-radius: 999px;
-  background: transparent;
+  background: #ffffff;
   color: var(--ink);
   font-size: 2rem;
   line-height: 1;
@@ -241,12 +248,13 @@ button:disabled {
   display: block;
   width: 100%;
   height: auto;
+  overflow: visible;
 }
 
 .delta-up {
   margin-top: 0.5rem;
   color: var(--green);
-  font-weight: 700;
+  font-weight: 800;
   font-size: 1.125rem;
 }
 
@@ -281,13 +289,15 @@ button:disabled {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #C9D1DE;
+  background: #ffffff;
+  border: 2.5px solid #111111;
 }
 
 .dot[aria-current="true"] .dot-in {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   background: var(--primary);
+  border: 3px solid var(--ink);
 }
 
 /* ---------- exercise rows ---------- */
@@ -295,6 +305,7 @@ button:disabled {
 .ex-list {
   display: flex;
   flex-direction: column;
+  gap: 0.75rem;
 }
 
 .row {
@@ -303,17 +314,13 @@ button:disabled {
   gap: 0.75rem;
   width: 100%;
   min-height: 72px;
-  padding: 0.75rem 0;
-  border: 0;
-  border-bottom: 1px solid var(--line);
+  padding: 0.75rem;
+  border: 3px solid var(--ink);
+  border-radius: 1rem;
   background: #ffffff;
   color: var(--ink);
   text-align: left;
   font-size: 1.125rem;
-}
-
-.row:last-child {
-  border-bottom: 0;
 }
 
 .row-icon {
@@ -332,14 +339,21 @@ button:disabled {
 
 .row-name {
   font-size: 1.125rem;
-  font-weight: 600;
+  font-weight: 800;
   color: var(--ink);
 }
 
 .row-sub {
-  font-size: 1.125rem;
-  font-weight: 600;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  font-size: 1rem;
+  font-weight: 700;
   color: var(--label);
+}
+
+.row-stage,
+.row-tries {
   white-space: nowrap;
 }
 
@@ -387,8 +401,9 @@ button:disabled {
   width: 72px;
   height: 72px;
   margin-top: 0.75rem;
+  border: 3px solid var(--ink);
   border-radius: 50%;
-  background: var(--card);
+  background: #ffffff;
   color: var(--primary);
   font-size: 2.25rem;
 }
@@ -401,12 +416,12 @@ button:disabled {
   bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 1rem);
   width: 72px;
   height: 72px;
-  border: 0;
+  border: 3px solid var(--ink);
   border-radius: 50%;
   background: var(--primary);
   color: #ffffff;
   font-size: 2.25rem;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -426,7 +441,7 @@ button:disabled {
   display: flex;
   justify-content: center;
   background: #ffffff;
-  border-top: 1px solid var(--line);
+  border-top: 3px solid var(--ink);
   z-index: 30;
 }
 
@@ -442,7 +457,7 @@ button:disabled {
   background: transparent;
   color: var(--label);
   font-size: 1.125rem;
-  font-weight: 600;
+  font-weight: 700;
   padding: 0;
 }
 
@@ -466,7 +481,7 @@ button:disabled {
 
 .detail-name {
   font-size: 1.125rem;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--ink);
 }
 
@@ -475,14 +490,103 @@ button:disabled {
   align-items: baseline;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin: 0.25rem 0 0.25rem;
+  margin: 0.25rem 0;
 }
 
 .hero-unit {
   font-size: 1.125rem;
-  font-weight: 600;
+  font-weight: 800;
   color: var(--label);
 }
+
+.hero-sub {
+  margin: 0.15rem 0 0.25rem;
+}
+
+.tries-line {
+  margin: 0.35rem 0;
+}
+
+/* ---------- road ---------- */
+
+.road-section {
+  margin-top: 0.5rem;
+}
+
+.road-wrap {
+  position: relative;
+  padding-left: 2.25rem;
+}
+
+.road-svg {
+  position: absolute;
+  left: 0.8rem;
+  top: 0;
+  bottom: 0;
+  width: 2rem;
+  height: 100%;
+  overflow: visible;
+}
+
+.road-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  list-style: none;
+}
+
+.road-node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 72px;
+  padding: 0.7rem 0.85rem;
+  border: 3px solid var(--ink);
+  border-radius: 1rem;
+  background: #ffffff;
+}
+
+.road-node.is-current {
+  border: 5px solid var(--primary);
+}
+
+.road-node.road-unknown {
+  border-style: dashed;
+}
+
+.road-icon {
+  font-size: 1.85rem;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.road-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.road-title {
+  font-size: 1.0625rem;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.road-best {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--label);
+}
+
+.road-here {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--primary);
+}
+
+/* ---------- segmented / controls ---------- */
 
 .segmented {
   display: flex;
@@ -496,17 +600,21 @@ button:disabled {
   min-width: 56px;
   padding: 0 1.125rem;
   border-radius: 999px;
-  border: 2px solid var(--line);
+  border: 3px solid var(--ink);
   background: #ffffff;
   color: var(--ink);
   font-size: 1.125rem;
-  font-weight: 600;
+  font-weight: 800;
 }
 
 .seg[aria-checked="true"] {
-  border-color: var(--primary);
-  background: var(--primary);
-  color: #ffffff;
+  border: 4px solid var(--primary);
+  background: #ffffff;
+  color: var(--primary);
+}
+
+.seg[aria-checked="true"]::after {
+  content: " ✓";
 }
 
 .stats {
@@ -525,7 +633,7 @@ button:disabled {
 
 .stat-label {
   font-size: 1.125rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--label);
 }
 
@@ -535,8 +643,62 @@ button:disabled {
   gap: 0.25rem;
 }
 
-.same {
-  margin-top: 0.5rem;
+/* ---------- stickers ---------- */
+
+.stickers-section {
+  margin-top: 1.5rem;
+}
+
+.sticker-card {
+  margin: 1rem 0;
+}
+
+.sticker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 1rem;
+  padding: 0.5rem 0 1rem;
+}
+
+.sticker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  min-height: 112px;
+  padding: 0.55rem 0.35rem;
+  border: 4px solid var(--ink);
+  border-radius: 1rem;
+  background: #ffffff;
+  text-align: center;
+}
+
+.sticker:nth-child(odd) {
+  transform: rotate(-4deg);
+}
+
+.sticker:nth-child(even) {
+  transform: rotate(3deg);
+}
+
+.sticker-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.sticker-label {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.15;
+}
+
+.sticker-value {
+  font-size: 1.0625rem;
+  font-weight: 800;
+  color: var(--primary);
+  line-height: 1.1;
 }
 
 /* ---------- records ---------- */
@@ -551,7 +713,7 @@ button:disabled {
   align-items: center;
   gap: 0.5rem;
   font-size: 1.125rem;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--ink);
   list-style: none;
 }
@@ -576,7 +738,7 @@ button:disabled {
   gap: 0.75rem;
   min-height: 64px;
   padding: 0.5rem 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 2px solid var(--ink);
 }
 
 .rec-date {
@@ -596,15 +758,16 @@ button:disabled {
   display: inline-flex;
   align-items: baseline;
   gap: 0.2rem;
+  font-weight: 700;
 }
 
 .rec-del {
   width: 56px;
   height: 56px;
   min-width: 56px;
-  border: 0;
+  border: 3px solid var(--ink);
   border-radius: 999px;
-  background: transparent;
+  background: #ffffff;
   color: var(--ink);
   font-size: 1.4rem;
   line-height: 1;
@@ -643,7 +806,7 @@ button:disabled {
 .sheet-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(17, 17, 17, 0.45);
+  background: rgba(17, 17, 17, 0.55);
 }
 
 .sheet {
@@ -655,7 +818,9 @@ button:disabled {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   background: #ffffff;
-  border-radius: 1.5rem 1.5rem 0 0;
+  border: 3px solid var(--ink);
+  border-bottom: 0;
+  border-radius: 1.25rem 1.25rem 0 0;
   padding: 0.5rem 1.25rem calc(1.5rem + env(safe-area-inset-bottom));
   animation: sheet-up 260ms ease-out;
 }
@@ -679,7 +844,7 @@ button:disabled {
 
 .sheet-title {
   font-size: 1.125rem;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--ink);
 }
 
@@ -687,9 +852,9 @@ button:disabled {
   width: 56px;
   height: 56px;
   min-width: 56px;
-  border: 0;
+  border: 3px solid var(--ink);
   border-radius: 999px;
-  background: transparent;
+  background: #ffffff;
   color: var(--ink);
   font-size: 1.4rem;
   line-height: 1;
@@ -702,57 +867,22 @@ button:disabled {
   padding-top: 0.5rem;
 }
 
+.sheet-subtitle {
+  font-size: 1.125rem;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 0.25rem 0 0.5rem;
+}
+
 .ex-choices,
 .cel-options {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.75rem;
   margin-bottom: 1.5rem;
 }
 
-.ex-choice {
-  position: relative;
-  flex: 1 1 0;
-  min-width: 88px;
-  min-height: 96px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.25rem;
-  padding: 0.5rem 0.25rem;
-  border: 4px solid transparent;
-  border-radius: 1rem;
-  background: var(--card);
-  color: var(--label);
-  font-size: 1.125rem;
-  font-weight: 600;
-}
-
-.ex-choice[aria-checked="true"] {
-  border-color: var(--primary);
-  background: #ffffff;
-  color: var(--ink);
-}
-
-.choice-icon {
-  font-size: 2.5rem;
-  line-height: 1;
-}
-
-.choice-name {
-  font-size: 1.125rem;
-  font-weight: 600;
-}
-
-.choice-check {
-  position: absolute;
-  top: 0.25rem;
-  right: 0.5rem;
-  color: var(--primary);
-  font-size: 1.25rem;
-  font-weight: 700;
-}
-
+.ex-choice,
 .cel-opt {
   position: relative;
   flex: 1 1 0;
@@ -764,28 +894,39 @@ button:disabled {
   justify-content: center;
   gap: 0.25rem;
   padding: 0.5rem 0.25rem;
-  border: 4px solid transparent;
+  border: 3px solid var(--ink);
   border-radius: 1rem;
-  background: var(--card);
-  color: var(--label);
-  font-size: 1.125rem;
-  font-weight: 600;
-}
-
-.cel-opt[aria-checked="true"] {
-  border-color: var(--primary);
   background: #ffffff;
   color: var(--ink);
+  font-size: 1.125rem;
+  font-weight: 800;
 }
 
+.ex-choice[aria-checked="true"],
+.cel-opt[aria-checked="true"] {
+  border: 4px solid var(--primary);
+  color: var(--primary);
+}
+
+.choice-icon,
 .cel-icon {
   font-size: 2.5rem;
   line-height: 1;
 }
 
+.choice-name,
 .cel-name {
   font-size: 1.125rem;
-  font-weight: 600;
+  font-weight: 800;
+}
+
+.choice-check {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.5rem;
+  color: var(--primary);
+  font-size: 1.25rem;
+  font-weight: 900;
 }
 
 .fields {
@@ -821,16 +962,25 @@ button:disabled {
   width: 64px;
   height: 64px;
   min-width: 64px;
-  border: 2px solid var(--label);
+  border: 3px solid var(--ink);
   border-radius: 0.75rem;
   background: #ffffff;
   color: var(--ink);
-  font-size: 1.75rem;
-  font-weight: 700;
+  font-size: 2rem;
+  font-weight: 800;
   line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.step-ico {
+  width: 1.75rem;
+  height: 1.75rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
 }
 
 .num-input {
@@ -838,14 +988,14 @@ button:disabled {
   min-width: 0;
   height: 72px;
   padding: 0 0.5rem;
-  border: 2px solid var(--line);
+  border: 3px solid var(--ink);
   border-radius: 0.75rem;
   background: #ffffff;
   color: var(--ink);
   font-family: var(--big-font);
   font-variant-numeric: tabular-nums;
   font-size: 2.5rem;
-  font-weight: 700;
+  font-weight: 800;
   text-align: center;
 }
 
@@ -853,36 +1003,36 @@ button:disabled {
   width: 100%;
   min-height: 56px;
   padding: 0 0.75rem;
-  border: 2px solid var(--line);
+  border: 3px solid var(--ink);
   border-radius: 0.75rem;
   background: #ffffff;
   color: var(--ink);
   font-family: var(--body-font);
   font-size: 1.125rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .primary-btn {
   width: 100%;
   min-height: 64px;
-  border: 0;
+  border: 3px solid var(--ink);
   border-radius: 1rem;
   background: var(--primary);
   color: #ffffff;
   font-size: 1.125rem;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .secondary-btn {
   width: 100%;
   min-height: 56px;
   margin-top: 0.75rem;
-  border: 2px solid var(--label);
+  border: 3px solid var(--ink);
   border-radius: 1rem;
   background: #ffffff;
   color: var(--ink);
   font-size: 1.125rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .sheet-section {
@@ -893,6 +1043,226 @@ button:disabled {
   margin: 0 0 0.5rem;
 }
 
+/* ---------- distance / time / stage controls ---------- */
+
+.distance-block {
+  margin-top: 0.5rem;
+}
+
+.chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.chip {
+  min-height: 64px;
+  min-width: 64px;
+  padding: 0 1rem;
+  border: 3px solid var(--ink);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 1.0625rem;
+  font-weight: 800;
+}
+
+.chip[aria-checked="true"] {
+  border: 4px solid var(--primary);
+  color: var(--primary);
+}
+
+.chip[aria-checked="true"]::after {
+  content: " ✓";
+}
+
+.distance-other {
+  margin-top: 0.75rem;
+}
+
+.time-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+.stage-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.stage-choice {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 72px;
+  padding: 0.65rem 0.85rem;
+  border: 3px solid var(--ink);
+  border-radius: 1rem;
+  background: #ffffff;
+  color: var(--ink);
+  text-align: left;
+}
+
+.stage-choice[aria-checked="true"] {
+  border: 4px solid var(--primary);
+  color: var(--primary);
+}
+
+.stage-choice-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.stage-choice-name {
+  font-size: 1.125rem;
+  font-weight: 800;
+}
+
+.try-live {
+  margin: 0.25rem 0 0.75rem;
+}
+
+.try-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.try-btn {
+  /* 5 per row on a 390px phone, never below a 56px tap target */
+  flex: 1 1 56px;
+  max-width: 72px;
+  aspect-ratio: 1;
+  height: auto;
+  min-width: 56px;
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 1.5rem;
+  font-weight: 900;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.try-btn[aria-pressed="true"] {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+.judge-note {
+  font-size: 1.125rem;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 0 0 0.75rem;
+}
+
+.level-live {
+  margin: 0.75rem auto;
+  max-width: 120px;
+}
+
+.level-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.level-opt {
+  position: relative;
+  min-height: 160px;
+  padding: 0.5rem;
+  border: 3px solid var(--ink);
+  border-radius: 1rem;
+  background: #ffffff;
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.1rem;
+}
+
+.level-opt[aria-pressed="true"] {
+  border: 4px solid var(--primary);
+}
+
+.level-illustration {
+  display: block;
+  width: 100%;
+  height: 96px;
+  overflow: hidden;
+}
+
+.level-illustration svg {
+  display: block;
+  width: 100%;
+  height: 96px;
+}
+
+.level-pct {
+  font-size: 1.5rem;
+}
+
+.level-label {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--label);
+  text-align: center;
+}
+
+.quick-check {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.5rem;
+  color: var(--primary);
+  font-size: 1.25rem;
+  font-weight: 900;
+  opacity: 0;
+}
+
+.level-opt[aria-pressed="true"] .quick-check {
+  opacity: 1;
+}
+
+/* ---------- parent settings ---------- */
+
+.parent-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 0;
+  border-bottom: 2px solid var(--ink);
+}
+
+.parent-row:last-child {
+  border-bottom: 0;
+}
+
+.parent-label {
+  color: var(--ink);
+}
+
+.parent-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.parent-value {
+  min-width: 5.5rem;
+  text-align: center;
+}
+
 /* ---------- toast ---------- */
 
 .toast {
@@ -901,12 +1271,13 @@ button:disabled {
   bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 6rem);
   transform: translateX(-50%);
   max-width: 90vw;
-  padding: 0.75rem 1.5rem;
+  padding: 0.75rem 1.25rem;
+  border: 3px solid var(--ink);
   border-radius: 1rem;
   background: var(--primary);
   color: #ffffff;
-  font-size: 2rem;
-  font-weight: 700;
+  font-size: 1.25rem;
+  font-weight: 800;
   text-align: center;
   z-index: 150;
   animation: toast-in 200ms ease-out;
@@ -983,25 +1354,14 @@ button:disabled {
   }
 }
 
-/* --- review fixes --- */
 /* Keep 保存 always reachable at the bottom of the record sheet. */
 .sheet [data-r-save] {
   position: sticky;
   bottom: 0;
   z-index: 2;
-  box-shadow: 0 0 0 0.75rem #ffffff; /* white halo so content scrolling under it stays legible */
+  background: var(--primary);
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
 }
-/* Stepper glyphs: use the UI font so − / ＋ have equal visual weight. */
-.step-btn {
-  font-family: system-ui, -apple-system, "PingFang SC", sans-serif;
-  font-size: 2rem;
-}
-/* Stepper icons drawn as SVG so − and ＋ have identical, bold strokes in every font. */
-.step-ico {
-  width: 1.75rem;
-  height: 1.75rem;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 3;
-  stroke-linecap: round;
-}
+
+.level-live svg { display: block; width: 100%; height: 120px; }
