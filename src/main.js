@@ -958,13 +958,13 @@ function recordSheetHtml() {
         <div class="field-row">
           <button type="button" class="step-btn" data-r-step="-1" data-key="${esc(m.key)}" aria-label="${esc(
             `${label} ${L('dec')}`
-          )}">−</button>
+          )}"><svg class="step-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12h14" /></svg></button>
           <input class="num-input" type="text" inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*" autocomplete="off" enterkeyhint="done" data-r-input="1" data-key="${esc(
             m.key
           )}" value="${esc(value)}" aria-label="${esc(`${label} (${unit})`)}" />
           <button type="button" class="step-btn" data-r-step="1" data-key="${esc(m.key)}" aria-label="${esc(
             `${label} ${L('inc')}`
-          )}">＋</button>
+          )}"><svg class="step-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12h14M12 5v14" /></svg></button>
         </div>
       </div>`;
     })

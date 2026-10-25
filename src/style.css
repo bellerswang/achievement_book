@@ -996,3 +996,12 @@ button:disabled {
   font-family: system-ui, -apple-system, "PingFang SC", sans-serif;
   font-size: 2rem;
 }
+/* Stepper icons drawn as SVG so − and ＋ have identical, bold strokes in every font. */
+.step-ico {
+  width: 1.75rem;
+  height: 1.75rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
