@@ -87,7 +87,10 @@ export const PRESET_EXERCISES = [
         higherIsBetter: true,
         input: true,
         step: 1,
+        // Free 0–100 input judged by a parent; these are quick-fill presets.
         options: [25, 50, 75, 100],
+        min: 0,
+        max: 100,
       },
     ],
     stages: [

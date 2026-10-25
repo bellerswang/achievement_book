@@ -558,3 +558,31 @@ describe('demo seed stages', () => {
     expect(Math.max(...levels)).toBe(75);
   });
 });
+
+import { bestSoFarSeries, bestBefore } from '../src/metrics.js';
+
+describe('bestSoFarSeries (progress-only curve)', () => {
+  const s = [
+    { date: '2026-10-01', value: 5 },
+    { date: '2026-10-02', value: 3 },
+    { date: '2026-10-04', value: 8 },
+    { date: '2026-10-05', value: 7 },
+  ];
+  it('never goes down and marks new-best days', () => {
+    const out = bestSoFarSeries(s);
+    expect(out.map((p) => p.value)).toEqual([5, 5, 8, 8]);
+    expect(out.map((p) => p.isNewBest)).toEqual([true, false, true, false]);
+    for (let i = 1; i < out.length; i += 1) expect(out[i].value).toBeGreaterThanOrEqual(out[i - 1].value);
+  });
+  it('lower-is-better (run time) only improves downward in value', () => {
+    const out = bestSoFarSeries([{ date: 'a', value: 400 }, { date: 'b', value: 420 }, { date: 'c', value: 390 }], { lowerIsBetter: true });
+    expect(out.map((p) => p.value)).toEqual([400, 400, 390]);
+  });
+  it('respects the best before the visible range', () => {
+    const prior = bestBefore(s, '2026-10-04');
+    expect(prior).toBe(5);
+    const out = bestSoFarSeries(s.slice(2), { priorBest: prior });
+    expect(out.map((p) => p.isNewBest)).toEqual([true, false]);
+    expect(bestSoFarSeries([{ date: 'x', value: 4 }], { priorBest: 6 })[0]).toMatchObject({ value: 6, isNewBest: false });
+  });
+});

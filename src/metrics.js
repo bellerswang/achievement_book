@@ -896,3 +896,37 @@ export function newStampsForSave(exercise, previousEntries, newEntry, settingsRa
 
   return out;
 }
+
+/* ------------------------------------------------------------------ */
+/* progress-only view                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Best-so-far ("progress only") transform of a daily series, so May never
+ * sees the curve go down. `priorBest` is the best value before the visible
+ * range (so a 7-day window doesn't restart from a worse value).
+ * Returns [{date, value (best so far), raw, isNewBest}] — isNewBest marks days
+ * that set a new best (only these are drawn as points).
+ */
+export function bestSoFarSeries(series, { lowerIsBetter = false, priorBest = null } = {}) {
+  const list = Array.isArray(series) ? series : [];
+  let best = typeof priorBest === 'number' && Number.isFinite(priorBest) ? priorBest : null;
+  const out = [];
+  for (const p of list) {
+    if (!p || !Number.isFinite(p.value)) continue;
+    const better = best === null || (lowerIsBetter ? p.value < best : p.value > best);
+    if (better) best = p.value;
+    out.push({ date: p.date, value: best, raw: p.value, isNewBest: better });
+  }
+  return out;
+}
+
+/** Best daily value strictly before `date` (for priorBest), or null. */
+export function bestBefore(series, date, lowerIsBetter = false) {
+  let best = null;
+  for (const p of Array.isArray(series) ? series : []) {
+    if (!p || p.date >= date || !Number.isFinite(p.value)) continue;
+    if (best === null || (lowerIsBetter ? p.value < best : p.value > best)) best = p.value;
+  }
+  return best;
+}
