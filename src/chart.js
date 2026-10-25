@@ -1,9 +1,12 @@
 // SVG chart helpers for 成就本. Pure string output, no DOM mutation.
 
-import { movingAverage, daysBetween, addDays } from './metrics.js';
+import { addDays, daysBetween, bestBefore, bestSoFarSeries } from './metrics.js';
 
 const PRIMARY = '#0B3D91';
+const INK = '#111111';
 const LABEL = '#333333';
+
+let chartSeq = 0;
 
 function esc(value) {
   return String(value === undefined || value === null ? '' : value).replace(/[&<>"']/g, (c) => {
@@ -27,14 +30,31 @@ function md(dateStr) {
   return `${m}/${d}`;
 }
 
+function emptyCurveSvg(width, height, text) {
+  if (!text) return '';
+  return `<svg class="curve-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(
+    text
+  )}" style="display:block;width:100%;height:auto">
+    <text x="${width / 2}" y="${height / 2}" text-anchor="middle" fill="${LABEL}" font-size="16" font-weight="600">${esc(
+      text
+    )}</text>
+  </svg>`;
+}
+
 /**
- * Pure geometry for the curve chart.
- * x is linear on real dates (gaps stay visible), y is linear on value.
+ * Pure geometry for the progress-only curve chart.
+ *
+ * The visible daily series is transformed with bestSoFarSeries(), so the line
+ * can only move toward "better". Points are only emitted for days that set a
+ * new best. The trend is a step line: horizontal first, then vertical up.
+ *
+ * x is linear on REAL dates (gaps stay visible), y is linear on value.
+ * Higher/better is drawn higher; lower-is-better is inverted so improvement
+ * still goes UP.
  */
 export function buildCurveGeometry(opts = {}) {
   const {
     series = [],
-    ma = null,
     pb = null,
     range = '30d',
     today,
@@ -56,19 +76,19 @@ export function buildCurveGeometry(opts = {}) {
   const plotH = Math.max(10, height - pad.top - pad.bottom);
   const bottomY = pad.top + plotH;
 
-  const list = (Array.isArray(series) ? series : [])
+  const raw = (Array.isArray(series) ? series : [])
     .filter((p) => p && typeof p.date === 'string' && Number.isFinite(p.value))
     .slice()
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
-  const xEnd = today || (list.length ? list[list.length - 1].date : '');
+  const xEnd = today || (raw.length ? raw[raw.length - 1].date : '');
   let xStart;
   if (range === '7d') xStart = addDays(xEnd, -6);
   else if (range === '30d') xStart = addDays(xEnd, -29);
-  else xStart = list.length ? list[0].date : addDays(xEnd, -29);
+  else xStart = raw.length ? raw[0].date : addDays(xEnd, -29);
   if (!xStart) xStart = xEnd;
 
-  const visible = list.filter((p) => p.date >= xStart && p.date <= xEnd);
+  const visible = raw.filter((p) => p.date >= xStart && p.date <= xEnd);
 
   if (!visible.length) {
     return {
@@ -86,6 +106,10 @@ export function buildCurveGeometry(opts = {}) {
     };
   }
 
+  const firstVisibleDate = visible[0].date;
+  const priorBest = bestBefore(raw, firstVisibleDate, lowerIsBetter);
+  const best = bestSoFarSeries(visible, { lowerIsBetter, priorBest });
+
   const rawSpan = daysBetween(xStart, xEnd);
   const spanDays = Number.isFinite(rawSpan) && rawSpan > 0 ? rawSpan : 1;
 
@@ -96,11 +120,8 @@ export function buildCurveGeometry(opts = {}) {
     return pad.left + (clamped / spanDays) * plotW;
   };
 
-  const values = visible.map((p) => p.value);
-  const maValues =
-    Array.isArray(ma) && ma.length === visible.length && ma.every((v) => Number.isFinite(v))
-      ? ma
-      : movingAverage(values, 7);
+  const values = best.map((p) => p.value);
+  if (typeof priorBest === 'number' && Number.isFinite(priorBest)) values.push(priorBest);
 
   const mn = Math.min(...values);
   const mx = Math.max(...values);
@@ -114,6 +135,7 @@ export function buildCurveGeometry(opts = {}) {
     yMin = 0;
     yMax = mx * 1.1;
   }
+
   if (!Number.isFinite(yMin) || !Number.isFinite(yMax) || yMax <= yMin) {
     yMin = 0;
     yMax = Math.max(1, Number.isFinite(mx) ? mx : 1);
@@ -128,18 +150,65 @@ export function buildCurveGeometry(opts = {}) {
 
   const pbDate = pb && typeof pb === 'object' ? pb.date : typeof pb === 'string' ? pb : null;
 
-  const points = visible.map((p) => ({
-    x: r2(xOf(p.date)),
-    y: r2(yOf(p.value)),
+  const newBests = best
+    .map((p) => ({
+      x: r2(xOf(p.date)),
+      y: r2(yOf(p.value)),
+      date: p.date,
+      value: p.value,
+      isNewBest: !!p.isNewBest,
+    }))
+    .filter((p) => p.isNewBest);
+
+  let pbIndex = -1;
+  if (pbDate) {
+    pbIndex = newBests.findIndex((p) => p.date === pbDate);
+  }
+  if (pbIndex < 0 && newBests.length) pbIndex = newBests.length - 1;
+
+  const points = newBests.map((p, i) => ({
+    x: p.x,
+    y: p.y,
     date: p.date,
     value: p.value,
-    isPB: !!(pbDate && p.date === pbDate),
+    isPB: i === pbIndex,
   }));
 
-  const trend = visible.map((p, i) => ({
-    x: r2(xOf(p.date)),
-    y: r2(yOf(maValues[i])),
-  }));
+  const trend = [];
+  let prevX = null;
+  let prevY = null;
+
+  if (typeof priorBest === 'number' && Number.isFinite(priorBest)) {
+    prevX = pad.left; // left edge of the plot (pixel x, not the date)
+    prevY = yOf(priorBest);
+    trend.push({ x: r2(prevX), y: r2(prevY) });
+  }
+
+  for (const p of best) {
+    const x = xOf(p.date);
+    const y = yOf(p.value);
+
+    if (prevX === null || prevY === null) {
+      prevX = x;
+      prevY = y;
+      trend.push({ x: r2(prevX), y: r2(prevY) });
+      continue;
+    }
+
+    if (x > prevX + 0.01) {
+      trend.push({ x: r2(x), y: r2(prevY) });
+    }
+    if (Math.abs(y - prevY) > 0.01) {
+      trend.push({ x: r2(x), y: r2(y) });
+    }
+    prevX = x;
+    prevY = y;
+  }
+
+  const xEndPx = xOf(xEnd);
+  if (prevX !== null && prevY !== null && xEndPx > prevX + 0.01) {
+    trend.push({ x: r2(xEndPx), y: r2(prevY) });
+  }
 
   let trendPath = '';
   if (trend.length) {
@@ -170,6 +239,8 @@ export function buildCurveGeometry(opts = {}) {
 
 /**
  * Render the main curve SVG string.
+ *
+ * May only sees the best-so-far step line, so the chart never moves down.
  */
 export function renderCurve(opts = {}) {
   const {
@@ -184,25 +255,24 @@ export function renderCurve(opts = {}) {
     highlightDate = null,
     animate = false,
     ariaLabel = '',
-    formatValue = (v) => String(v),
+    valueFormatter,
+    formatValue: legacyFormatter,
     lowerIsBetter = false,
     emptyText = '还没有记录',
   } = opts || {};
+
+  const fmt =
+    typeof valueFormatter === 'function'
+      ? valueFormatter
+      : typeof legacyFormatter === 'function'
+      ? legacyFormatter
+      : (v) => String(v);
 
   const clean = (Array.isArray(series) ? series : []).filter(
     (p) => p && typeof p.date === 'string' && Number.isFinite(p.value)
   );
 
-  if (!clean.length) {
-    if (!emptyText) return '';
-    return `<svg class="curve-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(
-      emptyText
-    )}" style="display:block;width:100%;height:auto">
-      <text x="${width / 2}" y="${height / 2}" text-anchor="middle" fill="${LABEL}" font-size="16" font-weight="600">${esc(
-        emptyText
-      )}</text>
-    </svg>`;
-  }
+  if (!clean.length) return emptyCurveSvg(width, height, emptyText);
 
   const geo = buildCurveGeometry({
     series: clean,
@@ -214,22 +284,31 @@ export function renderCurve(opts = {}) {
     lowerIsBetter,
   });
 
+  if (!geo.trend.length) return emptyCurveSvg(width, height, emptyText);
+
   const pad = geo.padding;
   const bottomY = height - pad.bottom;
   const topValue = lowerIsBetter ? geo.yMin : geo.yMax;
   const title = ariaLabel || `${metricLabel} ${unit}`.trim();
+  const hatchId = `habit-hatch-${++chartSeq}`;
 
   const parts = [];
   parts.push(
-    `<svg class="curve-svg" viewBox="0 0 ${width} ${height}" role="img" style="display:block;width:100%;height:auto">`
+    `<svg class="curve-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(
+      title
+    )}" style="display:block;width:100%;height:auto">`
   );
   parts.push(`<title>${esc(title)}</title>`);
+  parts.push(
+    `<defs><pattern id="${hatchId}" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke="${PRIMARY}" stroke-width="2" /></pattern></defs>`
+  );
 
   if (geo.areaPath) {
     parts.push(
-      `<path class="curve-area${animate ? ' fade-in' : ''}" d="${geo.areaPath}" fill="${PRIMARY}" fill-opacity="0.18" stroke="none" />`
+      `<path class="curve-area${animate ? ' fade-in' : ''}" d="${geo.areaPath}" fill="url(#${hatchId})" stroke="none" />`
     );
   }
+
   if (geo.trendPath) {
     parts.push(
       `<path class="curve-line${animate ? ' draw' : ''}" d="${geo.trendPath}" fill="none" stroke="${PRIMARY}" stroke-width="4" stroke-linejoin="round" stroke-linecap="round" />`
@@ -239,7 +318,7 @@ export function renderCurve(opts = {}) {
   parts.push(
     `<line x1="${pad.left}" y1="${r2(bottomY)}" x2="${width - pad.right}" y2="${r2(
       bottomY
-    )}" stroke="${LABEL}" stroke-width="1.5" />`
+    )}" stroke="${INK}" stroke-width="2" />`
   );
 
   parts.push(
@@ -254,7 +333,7 @@ export function renderCurve(opts = {}) {
   );
   parts.push(
     `<text x="${pad.left}" y="${pad.top - 14}" fill="${LABEL}" font-size="14" font-weight="600" text-anchor="start">${esc(
-      formatValue(topValue)
+      fmt(topValue)
     )}</text>`
   );
 
@@ -264,7 +343,7 @@ export function renderCurve(opts = {}) {
     if (pt.isPB) continue;
     const isHi = !!(highlightDate && pt.date === highlightDate);
     parts.push(
-      `<circle class="pt${isHi ? ' pt-new' : ''}" cx="${pt.x}" cy="${pt.y}" r="4" fill="#FFFFFF" stroke="${PRIMARY}" stroke-width="2" />`
+      `<circle class="pt${isHi ? ' pt-new' : ''}" cx="${pt.x}" cy="${pt.y}" r="4" fill="#FFFFFF" stroke="${PRIMARY}" stroke-width="2.5" />`
     );
   }
 
@@ -275,7 +354,7 @@ export function renderCurve(opts = {}) {
     );
     parts.push(
       `<text x="${pbPoint.x}" y="${r2(pbPoint.y - 16)}" text-anchor="middle" fill="${PRIMARY}" font-size="14" font-weight="700">★ ${esc(
-        formatValue(pbPoint.value)
+        fmt(pbPoint.value)
       )}</text>`
     );
   }
@@ -286,14 +365,24 @@ export function renderCurve(opts = {}) {
 
 /**
  * Small decorative sparkline. Always aria-hidden.
+ * Values are made monotonic first so the line never moves down.
  */
 export function renderSparkline(values, opts = {}) {
   const width = Number.isFinite(opts.width) ? opts.width : 96;
   const height = Number.isFinite(opts.height) ? opts.height : 32;
-  const nums = (Array.isArray(values) ? values : []).filter((v) => Number.isFinite(v));
+  const lowerIsBetter = !!opts.lowerIsBetter;
 
-  if (!nums.length) {
+  const raw = (Array.isArray(values) ? values : []).filter((v) => Number.isFinite(v));
+  if (!raw.length) {
     return `<svg class="spark" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-hidden="true" focusable="false"></svg>`;
+  }
+
+  const nums = [];
+  let best = null;
+  for (const v of raw) {
+    if (best === null) best = v;
+    else best = lowerIsBetter ? Math.min(best, v) : Math.max(best, v);
+    nums.push(best);
   }
 
   const pad = 4;
@@ -304,7 +393,14 @@ export function renderSparkline(values, opts = {}) {
 
   const pts = nums.map((v, i) => {
     const x = n === 1 ? width / 2 : pad + (i / (n - 1)) * (width - pad * 2);
-    const y = span === 0 ? height / 2 : height - pad - ((v - mn) / span) * (height - pad * 2);
+    let y;
+    if (span === 0) {
+      y = height / 2;
+    } else if (lowerIsBetter) {
+      y = pad + ((v - mn) / span) * (height - pad * 2);
+    } else {
+      y = height - pad - ((v - mn) / span) * (height - pad * 2);
+    }
     return [r2(x), r2(y)];
   });
 
