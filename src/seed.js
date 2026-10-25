@@ -19,6 +19,7 @@ export function mulberry32(seed) {
 }
 
 const DAYS = 75;
+const RUN_DISTANCES = [1, 1, 1, 2, 0.5, 3];
 
 function clamp(v, lo, hi) {
   return Math.min(hi, Math.max(lo, v));
@@ -63,31 +64,54 @@ export function makeDemoEntries(today, rng = Math.random) {
     const date = addDays(today, -(DAYS - 1 - i));
     const progress = i / (DAYS - 1); // 0 = oldest, 1 = today
 
-    // realistic gaps: skip ~35% of days entirely
-    if (rng() < 0.35) continue;
+    // ---- pull-ups: three-stage story ----
+    let doPullup = true;
+    if (i < 61 && rng() < 0.18) doPullup = false;
 
-    // ---- pull-ups (hang 3s -> 25s, reps 0-1 -> 2-3) ----
-    const hang = Math.round(clamp(3 + 22 * progress + (rng() - 0.5) * 5, 2, 40));
-    const repsCap = progress < 0.35 ? 1 : progress < 0.7 ? 2 : 3;
-    const reps = Math.floor(rng() * (repsCap + 1));
-    const sets = 1 + Math.floor(rng() * 2);
-    push('pullup', date, { hang, reps, sets }, 0);
+    if (doPullup) {
+      if (i <= 24) {
+        // Stage 1: attempts 5, grabs 1 -> 5, unlock stage 2 around day 20.
+        const base = 1 + 4 * (i / 24);
+        const jitter = (rng() - 0.5) * 0.6;
+        const grabs = Math.round(clamp(base + jitter, 1, 5));
+        push('pullup', date, { grabs, attempts: 5 }, 0);
+      } else if (i <= 60) {
+        // Stage 2: hang 3 -> 18s, crossing 10s around day 50.
+        const base =
+          i <= 50
+            ? 3 + 7 * ((i - 25) / 25)
+            : 10 + 8 * ((i - 50) / 10);
+        const jitter = (rng() - 0.5) * 1.2;
+        const hang = Math.round(clamp(base + jitter, 2, 20));
+        push('pullup', date, { hang }, 0);
+      } else {
+        // Stage 3: levels 25 -> 50 -> 75 in the last two weeks.
+        const level = i < 65 ? 25 : i < 70 ? 50 : 75;
+        push('pullup', date, { level }, 0);
+      }
 
-    // some days have a second attempt
-    if (rng() < 0.3) {
-      const hang2 = Math.max(1, Math.round(hang * (0.6 + rng() * 0.3)));
-      const reps2 = Math.max(0, reps - 1 + Math.floor(rng() * 2));
-      push('pullup', date, { hang: hang2, reps: reps2, sets: 1 }, 1);
+      // Keep stage 1 charting after stage 2 unlocks.
+      if (i >= 21 && rng() < 0.35) {
+        const grabs = Math.round(clamp(3 + rng() * 2, 1, 5));
+        push('pullup', date, { grabs, attempts: 5 }, 1);
+      }
+
+      // Keep stage 2 charting after stage 3 unlocks.
+      if (i >= 51 && rng() < 0.3) {
+        const hang = Math.round(clamp(8 + rng() * 8, 2, 20));
+        push('pullup', date, { hang }, 2);
+      }
     }
 
-    // ---- running (0.8km -> 2.5km, ~7.5 min/km) ----
-    if (rng() < 0.45) {
-      const distance = round(clamp(0.8 + 1.7 * progress + (rng() - 0.5) * 0.4, 0.3, 6), 2);
-      const duration = round(distance * 7.5 * (1 + (rng() - 0.5) * 0.12), 1);
+    // ---- running: PB per distance, seconds, trending ~10% faster ----
+    if (rng() < 0.55) {
+      const distance = RUN_DISTANCES[Math.floor(rng() * RUN_DISTANCES.length)];
+      const paceFactor = (1 - 0.1 * progress) * (1 + (rng() - 0.5) * 0.1);
+      const duration = Math.max(1, Math.round(distance * 420 * paceFactor));
       push('run', date, { distance, duration }, 0);
     }
 
-    // ---- jump rope (20 -> 120 reps) ----
+    // ---- jump rope: as before, duration in seconds ----
     if (rng() < 0.5) {
       const ropeReps = Math.round(clamp(20 + 100 * progress + (rng() - 0.5) * 24, 5, 300));
       const ropeTime = Math.round(ropeReps * (0.3 + rng() * 0.2));
@@ -95,12 +119,13 @@ export function makeDemoEntries(today, rng = Math.random) {
     }
   }
 
-  // guarantee at least one record per exercise (keeps the UI happy)
+  // Guarantee at least one record per exercise (keeps the UI happy).
   const fallback = {
-    pullup: () => ({ hang: 8, reps: 1, sets: 1 }),
-    run: () => ({ distance: 1.2, duration: 9 }),
+    pullup: () => ({ grabs: 1, attempts: 5 }),
+    run: () => ({ distance: 1, duration: 420 }),
     rope: () => ({ reps: 40, duration: 16 }),
   };
+
   for (const exerciseId of ['pullup', 'run', 'rope']) {
     if (!entries.some((e) => e.exerciseId === exerciseId)) {
       push(exerciseId, today, fallback[exerciseId](), 9);

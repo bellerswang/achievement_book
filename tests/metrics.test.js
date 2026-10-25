@@ -61,13 +61,35 @@ describe('presets', () => {
     expect(ROPE.weekly).toEqual({ metric: 'reps', mode: 'sum' });
   });
 
-  it('marks pace as derived and lower-is-better', () => {
-    const pace = getMetric(RUN, 'pace');
-    expect(pace.derived).toBe(true);
-    expect(pace.input).toBe(false);
-    expect(pace.higherIsBetter).toBe(false);
-    expect(RUN.chartMetrics).toEqual(['distance', 'pace']);
+  it('describes the pull-up three-stage progression', () => {
+    expect(PULLUP.metrics.map((m) => m.key)).toEqual([
+      'grabs',
+      'attempts',
+      'grabRate',
+      'hang',
+      'level',
+    ]);
+    expect(PULLUP.stages.map((s) => s.id)).toEqual(['grab', 'hang', 'pull']);
+    expect(PULLUP.chartMetrics).toEqual(['grabRate', 'hang', 'level']);
+    expect(PULLUP.defaultChartMetric).toBe('grabRate');
+    expect(getMetric(PULLUP, 'grabRate').derived).toBe(true);
+    expect(getMetric(PULLUP, 'grabRate').input).toBe(false);
+    expect(getMetric(PULLUP, 'attempts').input).toBe(true);
+    expect(getMetric(PULLUP, 'level').options).toEqual([25, 50, 75, 100]);
+  });
+
+  it('stores running duration in seconds and has no pace metric', () => {
+    expect(RUN.metrics.map((m) => m.key)).toEqual(['distance', 'duration']);
+    expect(getMetric(RUN, 'duration').unitEn).toBe('s');
+    expect(getMetric(RUN, 'duration').higherIsBetter).toBe(false);
+    expect(getMetric(RUN, 'pace')).toBe(null);
+    expect(RUN.chartMetrics).toEqual(['distance', 'duration']);
     expect(RUN.defaultChartMetric).toBe('distance');
+  });
+
+  it('leaves exercises without stages without a stages key', () => {
+    expect(RUN.stages).toBeUndefined();
+    expect(ROPE.stages).toBeUndefined();
   });
 
   it('getMetric returns null for unknown keys', () => {
@@ -111,10 +133,10 @@ describe('date helpers', () => {
   });
 
   it('startOfWeek lands on Monday', () => {
-    expect(startOfWeek('2024-03-06')).toBe('2024-03-04'); // Wed
-    expect(startOfWeek('2024-03-04')).toBe('2024-03-04'); // Mon
-    expect(startOfWeek('2024-03-10')).toBe('2024-03-04'); // Sun
-    expect(startOfWeek('2024-01-01')).toBe('2024-01-01'); // Mon
+    expect(startOfWeek('2024-03-06')).toBe('2024-03-04');
+    expect(startOfWeek('2024-03-04')).toBe('2024-03-04');
+    expect(startOfWeek('2024-03-10')).toBe('2024-03-04');
+    expect(startOfWeek('2024-01-01')).toBe('2024-01-01');
   });
 });
 
@@ -124,8 +146,17 @@ describe('date helpers', () => {
 
 describe('entryValue', () => {
   it('reads plain values', () => {
+    expect(entryValue(PULLUP, makeEntry('pullup', '2024-03-01', { grabs: 3 }), 'grabs')).toBe(3);
     expect(entryValue(PULLUP, makeEntry('pullup', '2024-03-01', { hang: 12 }), 'hang')).toBe(12);
+    expect(entryValue(PULLUP, makeEntry('pullup', '2024-03-01', { level: 50 }), 'level')).toBe(50);
     expect(entryValue(ROPE, makeEntry('rope', '2024-03-01', { reps: '30' }), 'reps')).toBe(30);
+  });
+
+  it('derives grabRate from grabs / attempts', () => {
+    const entry = makeEntry('pullup', '2024-03-01', { grabs: 3, attempts: 5 });
+    expect(entryValue(PULLUP, entry, 'grabRate')).toBe(60);
+    expect(entryValue(PULLUP, makeEntry('pullup', '2024-03-01', { grabs: 4, attempts: 5 }), 'grabRate')).toBe(80);
+    expect(entryValue(PULLUP, makeEntry('pullup', '2024-03-01', { grabs: 4, attempts: 6 }), 'grabRate')).toBe(67);
   });
 
   it('returns null for missing / invalid values', () => {
@@ -133,17 +164,13 @@ describe('entryValue', () => {
     expect(entryValue(PULLUP, makeEntry('pullup', '2024-03-01', { hang: 'abc' }), 'hang')).toBe(null);
     expect(entryValue(PULLUP, makeEntry('pullup', '2024-03-01', { hang: null }), 'hang')).toBe(null);
     expect(entryValue(PULLUP, null, 'hang')).toBe(null);
+    expect(entryValue(PULLUP, makeEntry('pullup', '2024-03-01', { grabs: 3 }), 'grabRate')).toBe(null);
+    expect(entryValue(PULLUP, makeEntry('pullup', '2024-03-01', { grabs: 3, attempts: 0 }), 'grabRate')).toBe(null);
   });
 
-  it('derives pace from duration / distance', () => {
-    const e = makeEntry('run', '2024-03-01', { distance: 2, duration: 15 });
-    expect(entryValue(RUN, e, 'pace')).toBe(7.5);
-  });
-
-  it('derives no pace when distance is zero or missing', () => {
-    expect(entryValue(RUN, makeEntry('run', '2024-03-01', { distance: 0, duration: 15 }), 'pace')).toBe(null);
-    expect(entryValue(RUN, makeEntry('run', '2024-03-01', { distance: 2 }), 'pace')).toBe(null);
-    expect(entryValue(RUN, makeEntry('run', '2024-03-01', { duration: 15 }), 'pace')).toBe(null);
+  it('reads run duration in seconds', () => {
+    const entry = makeEntry('run', '2024-03-01', { distance: 1, duration: 420 });
+    expect(entryValue(RUN, entry, 'duration')).toBe(420);
   });
 });
 
@@ -188,29 +215,42 @@ describe('dailySeries', () => {
 
   it('sums distances per day for running', () => {
     const entries = [
-      makeEntry('run', '2024-03-01', { distance: 1, duration: 8 }),
-      makeEntry('run', '2024-03-01', { distance: 2, duration: 16 }),
+      makeEntry('run', '2024-03-01', { distance: 1, duration: 420 }),
+      makeEntry('run', '2024-03-01', { distance: 2, duration: 840 }),
     ];
     const series = dailySeries(RUN, entries, 'distance');
     expect(series).toEqual([{ date: '2024-03-01', value: 3, count: 2 }]);
   });
 
-  it('aggregates pace as sum(duration)/sum(distance) per day', () => {
+  it('takes the minimum run duration per day', () => {
     const entries = [
-      makeEntry('run', '2024-03-01', { distance: 1, duration: 8 }),
-      makeEntry('run', '2024-03-01', { distance: 2, duration: 16 }),
-      makeEntry('run', '2024-03-03', { distance: 1, duration: 6 }),
+      makeEntry('run', '2024-03-01', { distance: 1, duration: 420 }),
+      makeEntry('run', '2024-03-01', { distance: 1, duration: 400 }),
+      makeEntry('run', '2024-03-02', { distance: 1, duration: 430 }),
     ];
-    const series = dailySeries(RUN, entries, 'pace');
+    const series = dailySeries(RUN, entries, 'duration');
     expect(series).toEqual([
-      { date: '2024-03-01', value: 8, count: 2 },
-      { date: '2024-03-03', value: 6, count: 1 },
+      { date: '2024-03-01', value: 400, count: 2 },
+      { date: '2024-03-02', value: 430, count: 1 },
+    ]);
+  });
+
+  it('supports derived grabRate', () => {
+    const entries = [
+      makeEntry('pullup', '2024-03-01', { grabs: 3, attempts: 5 }),
+      makeEntry('pullup', '2024-03-01', { grabs: 4, attempts: 5 }),
+      makeEntry('pullup', '2024-03-02', { grabs: 2, attempts: 5 }),
+    ];
+    const series = dailySeries(PULLUP, entries, 'grabRate');
+    expect(series).toEqual([
+      { date: '2024-03-01', value: 80, count: 2 },
+      { date: '2024-03-02', value: 40, count: 1 },
     ]);
   });
 
   it('skips days where the metric is missing', () => {
     const entries = [
-      makeEntry('pullup', '2024-03-01', { reps: 1 }),
+      makeEntry('pullup', '2024-03-01', { grabs: 1, attempts: 5 }),
       makeEntry('pullup', '2024-03-02', { hang: 9 }),
     ];
     const series = dailySeries(PULLUP, entries, 'hang');
@@ -271,14 +311,14 @@ describe('personalBest', () => {
     expect(pb).toEqual({ value: 15, date: '2024-03-02', entryId: entries[1].id });
   });
 
-  it('picks the min for pace (lower is better)', () => {
+  it('picks the min for run duration (lower is better)', () => {
     const entries = [
-      makeEntry('run', '2024-03-01', { distance: 1, duration: 8 }),
-      makeEntry('run', '2024-03-02', { distance: 1, duration: 6 }),
-      makeEntry('run', '2024-03-03', { distance: 1, duration: 7 }),
+      makeEntry('run', '2024-03-01', { distance: 1, duration: 420 }),
+      makeEntry('run', '2024-03-02', { distance: 1, duration: 400 }),
+      makeEntry('run', '2024-03-03', { distance: 1, duration: 430 }),
     ];
-    const pb = personalBest(RUN, entries, 'pace');
-    expect(pb.value).toBe(6);
+    const pb = personalBest(RUN, entries, 'duration');
+    expect(pb.value).toBe(400);
     expect(pb.date).toBe('2024-03-02');
   });
 
@@ -292,7 +332,7 @@ describe('cumulativeTotal', () => {
     const entries = [
       makeEntry('pullup', '2024-03-01', { hang: 10 }),
       makeEntry('pullup', '2024-03-02', { hang: 5 }),
-      makeEntry('pullup', '2024-03-02', { reps: 2 }),
+      makeEntry('pullup', '2024-03-02', { grabs: 2, attempts: 5 }),
     ];
     expect(cumulativeTotal(PULLUP, entries, 'hang')).toBe(15);
   });
@@ -301,9 +341,13 @@ describe('cumulativeTotal', () => {
     expect(cumulativeTotal(PULLUP, [], 'hang')).toBe(0);
   });
 
-  it('returns null for pace', () => {
-    const entries = [makeEntry('run', '2024-03-01', { distance: 1, duration: 8 })];
-    expect(cumulativeTotal(RUN, entries, 'pace')).toBe(null);
+  it('returns null for derived metrics and run duration', () => {
+    expect(
+      cumulativeTotal(PULLUP, [makeEntry('pullup', '2024-03-01', { grabs: 3, attempts: 5 })], 'grabRate')
+    ).toBe(null);
+    expect(
+      cumulativeTotal(RUN, [makeEntry('run', '2024-03-01', { distance: 1, duration: 420 })], 'duration')
+    ).toBe(null);
   });
 });
 
@@ -326,7 +370,7 @@ describe('streakDays', () => {
   it('counts ending yesterday when today is empty', () => {
     const entries = [
       makeEntry('pullup', '2024-03-08', { hang: 5 }),
-      makeEntry('run', '2024-03-09', { distance: 1 }),
+      makeEntry('run', '2024-03-09', { distance: 1, duration: 420 }),
     ];
     expect(streakDays(entries, today)).toBe(2);
   });
@@ -374,7 +418,7 @@ describe('latestAndPrevious', () => {
   it('skips entries without a value', () => {
     const entries = [
       makeEntry('pullup', '2024-03-01', { hang: 4 }),
-      makeEntry('pullup', '2024-03-02', { reps: 1 }),
+      makeEntry('pullup', '2024-03-02', { grabs: 1, attempts: 5 }),
       makeEntry('pullup', '2024-03-03', { hang: 9 }),
     ];
     const result = latestAndPrevious(PULLUP, entries, 'hang');
@@ -411,7 +455,7 @@ function fillDays(exerciseId, values, fromDate, toDate) {
 }
 
 describe('vsLastMonth', () => {
-  const today = '2024-03-10'; // current 2024-02-10..2024-03-10, previous 2024-01-11..2024-02-09
+  const today = '2024-03-10';
 
   it('reports an improvement for higher-is-better metrics', () => {
     const entries = [
@@ -423,24 +467,24 @@ describe('vsLastMonth', () => {
     expect(result.direction).toBe('up');
   });
 
-  it('treats a lower pace as an improvement', () => {
+  it('treats a lower run duration as an improvement', () => {
     const entries = [
-      ...fillDays('run', { distance: 1, duration: 6 }, '2024-02-10', today),
-      ...fillDays('run', { distance: 1, duration: 8 }, '2024-01-11', '2024-02-09'),
+      ...fillDays('run', { distance: 1, duration: 360 }, '2024-02-10', today),
+      ...fillDays('run', { distance: 1, duration: 480 }, '2024-01-11', '2024-02-09'),
     ];
-    const result = vsLastMonth(RUN, entries, 'pace', today);
+    const result = vsLastMonth(RUN, entries, 'duration', today);
     expect(result.pct).toBe(25);
     expect(result.direction).toBe('up');
   });
 
-  it('reports down when the pace gets worse', () => {
+  it('reports down when run duration gets worse', () => {
     const entries = [
-      ...fillDays('run', { distance: 1, duration: 9 }, '2024-02-10', today),
-      ...fillDays('run', { distance: 1, duration: 6 }, '2024-01-11', '2024-02-09'),
+      ...fillDays('run', { distance: 1, duration: 480 }, '2024-02-10', today),
+      ...fillDays('run', { distance: 1, duration: 360 }, '2024-01-11', '2024-02-09'),
     ];
-    const result = vsLastMonth(RUN, entries, 'pace', today);
+    const result = vsLastMonth(RUN, entries, 'duration', today);
     expect(result.direction).toBe('down');
-    expect(result.pct).toBe(-50);
+    expect(result.pct).toBe(-33);
   });
 
   it('is flat for equal means and for sub-1% changes', () => {
@@ -488,13 +532,13 @@ describe('bestInPeriod', () => {
     expect(bestInPeriod(PULLUP, entries, 'hang', '2024-03-06', '2024-03-09')).toBe(null);
   });
 
-  it('takes the minimum for pace', () => {
+  it('takes the minimum run duration', () => {
     const entries = [
-      makeEntry('run', '2024-03-01', { distance: 1, duration: 7 }),
-      makeEntry('run', '2024-03-05', { distance: 1, duration: 6 }),
-      makeEntry('run', '2024-03-10', { distance: 1, duration: 9 }),
+      makeEntry('run', '2024-03-01', { distance: 1, duration: 420 }),
+      makeEntry('run', '2024-03-05', { distance: 1, duration: 400 }),
+      makeEntry('run', '2024-03-10', { distance: 1, duration: 430 }),
     ];
-    expect(bestInPeriod(RUN, entries, 'pace', '2024-03-01', '2024-03-10')).toBe(6);
+    expect(bestInPeriod(RUN, entries, 'duration', '2024-03-01', '2024-03-10')).toBe(400);
   });
 });
 
@@ -503,7 +547,7 @@ describe('attemptsOnDay', () => {
     const entries = [
       makeEntry('pullup', '2024-03-01', { hang: 5 }),
       makeEntry('pullup', '2024-03-01', { hang: 6 }),
-      makeEntry('run', '2024-03-01', { distance: 1 }),
+      makeEntry('run', '2024-03-01', { distance: 1, duration: 420 }),
       makeEntry('pullup', '2024-03-02', { hang: 7 }),
     ];
     expect(attemptsOnDay(entries, 'pullup', '2024-03-01')).toBe(2);
@@ -523,18 +567,20 @@ describe('weeklySummary', () => {
 
   it('counts tries for pull-up and sums metrics for run and rope', () => {
     const entries = [
-      makeEntry('pullup', '2024-03-03', { hang: 5 }), // previous week
-      makeEntry('pullup', '2024-03-04', { hang: 6 }),
+      makeEntry('pullup', '2024-03-03', { grabs: 3, attempts: 5 }),
+      makeEntry('pullup', '2024-03-04', { grabs: 4, attempts: 5 }),
       makeEntry('pullup', '2024-03-06', { hang: 7 }),
-      makeEntry('run', '2024-03-05', { distance: 1.5, duration: 11 }),
-      makeEntry('run', '2024-03-06', { distance: 2, duration: 14 }),
-      makeEntry('run', '2024-03-07', { distance: 5, duration: 30 }), // after today
+      makeEntry('run', '2024-03-05', { distance: 1.5, duration: 630 }),
+      makeEntry('run', '2024-03-06', { distance: 2, duration: 840 }),
+      makeEntry('run', '2024-03-07', { distance: 5, duration: 2100 }),
+      makeEntry('rope', '2024-03-04', { reps: 30, duration: 15 }),
+      makeEntry('rope', '2024-03-06', { reps: 40, duration: 20 }),
     ];
     const summary = weeklySummary(PRESET_EXERCISES, entries, today);
     expect(summary).toEqual([
       { exerciseId: 'pullup', value: 2 },
       { exerciseId: 'run', value: 3.5 },
-      { exerciseId: 'rope', value: 0 },
+      { exerciseId: 'rope', value: 70 },
     ]);
   });
 
@@ -591,39 +637,39 @@ describe('filterRange', () => {
 /* ------------------------------------------------------------------ */
 
 describe('isNewPB', () => {
-  it('detects a new best for every chart metric', () => {
+  it('detects a new best for chart metrics', () => {
     const previous = [
-      makeEntry('pullup', '2024-03-01', { hang: 10, reps: 1 }),
-      makeEntry('pullup', '2024-03-02', { hang: 8, reps: 2 }),
+      makeEntry('pullup', '2024-03-01', { grabs: 2, attempts: 5, hang: 5 }),
+      makeEntry('pullup', '2024-03-02', { grabs: 3, attempts: 5, hang: 8 }),
     ];
-    const next = makeEntry('pullup', '2024-03-03', { hang: 12, reps: 3 });
-    expect(isNewPB(PULLUP, previous, next)).toEqual(['hang', 'reps']);
+    const next = makeEntry('pullup', '2024-03-03', { grabs: 4, attempts: 5, hang: 9 });
+    expect(isNewPB(PULLUP, previous, next)).toEqual(['grabRate', 'hang']);
   });
 
   it('requires strictly beating previous values', () => {
-    const previous = [makeEntry('pullup', '2024-03-01', { hang: 10 })];
-    const tied = makeEntry('pullup', '2024-03-02', { hang: 10 });
+    const previous = [makeEntry('pullup', '2024-03-01', { grabs: 4, attempts: 5, hang: 10 })];
+    const tied = makeEntry('pullup', '2024-03-02', { grabs: 4, attempts: 5, hang: 10 });
     expect(isNewPB(PULLUP, previous, tied)).toEqual([]);
   });
 
   it('counts a first positive value but not a zero', () => {
-    const zero = makeEntry('pullup', '2024-03-01', { hang: 0, reps: 0 });
+    const zero = makeEntry('pullup', '2024-03-01', { grabs: 0, attempts: 5 });
     expect(isNewPB(PULLUP, [], zero)).toEqual([]);
 
-    const first = makeEntry('pullup', '2024-03-01', { hang: 5, reps: 0 });
-    expect(isNewPB(PULLUP, [], first)).toEqual(['hang']);
+    const first = makeEntry('pullup', '2024-03-01', { grabs: 1, attempts: 5 });
+    expect(isNewPB(PULLUP, [], first)).toEqual(['grabRate']);
   });
 
-  it('treats a lower pace as a new PB', () => {
-    const previous = [makeEntry('run', '2024-03-01', { distance: 1, duration: 8 })];
-    const faster = makeEntry('run', '2024-03-02', { distance: 1, duration: 6 });
-    const slower = makeEntry('run', '2024-03-03', { distance: 1, duration: 9 });
-    expect(isNewPB(RUN, previous, faster)).toContain('pace');
-    expect(isNewPB(RUN, previous, slower)).not.toContain('pace');
+  it('treats a lower run duration as a new PB', () => {
+    const previous = [makeEntry('run', '2024-03-01', { distance: 1, duration: 420 })];
+    const faster = makeEntry('run', '2024-03-02', { distance: 1, duration: 400 });
+    const slower = makeEntry('run', '2024-03-03', { distance: 1, duration: 430 });
+    expect(isNewPB(RUN, previous, faster)).toEqual(['duration']);
+    expect(isNewPB(RUN, previous, slower)).toEqual([]);
   });
 
-  it('ignores missing metrics in the new entry', () => {
-    const previous = [makeEntry('pullup', '2024-03-01', { hang: 10, reps: 1 })];
+  it('ignores missing / derived-null metrics in the new entry', () => {
+    const previous = [makeEntry('pullup', '2024-03-01', { grabs: 4, attempts: 5, hang: 10 })];
     const next = makeEntry('pullup', '2024-03-02', { hang: 12 });
     expect(isNewPB(PULLUP, previous, next)).toEqual(['hang']);
   });
@@ -635,8 +681,9 @@ describe('isNewPB', () => {
 
 describe('formatValue', () => {
   const hangMetric = getMetric(PULLUP, 'hang');
+  const grabRateMetric = getMetric(PULLUP, 'grabRate');
   const distanceMetric = getMetric(RUN, 'distance');
-  const paceMetric = getMetric(RUN, 'pace');
+  const durationMetric = getMetric(RUN, 'duration');
 
   it('renders an en dash for missing values', () => {
     expect(formatValue(hangMetric, null)).toBe('–');
@@ -647,19 +694,14 @@ describe('formatValue', () => {
   it('rounds int metrics', () => {
     expect(formatValue(hangMetric, 12)).toBe('12');
     expect(formatValue(hangMetric, 5.6)).toBe('6');
+    expect(formatValue(grabRateMetric, 80)).toBe('80');
+    expect(formatValue(durationMetric, 420)).toBe('420');
   });
 
   it('trims decimals to at most 2 places', () => {
     expect(formatValue(distanceMetric, 5.2)).toBe('5.2');
     expect(formatValue(distanceMetric, 5.0)).toBe('5');
     expect(formatValue(distanceMetric, '1.256')).toBe('1.26');
-  });
-
-  it('renders pace as m:ss', () => {
-    expect(formatValue(paceMetric, 6.5)).toBe('6:30');
-    expect(formatValue(paceMetric, 6)).toBe('6:00');
-    expect(formatValue(paceMetric, 10)).toBe('10:00');
-    expect(formatValue(paceMetric, 6.05)).toBe('6:03');
   });
 });
 
@@ -671,6 +713,8 @@ describe('i18n', () => {
   it('translates with params', () => {
     expect(t('triesToday', 'zh', { n: 3 })).toBe('今天试了 3 次');
     expect(t('triesToday', 'en', { n: 3 })).toBe('3 tries today');
+    expect(t('stage', 'zh', { n: 2 })).toBe('第2关');
+    expect(t('stage', 'en', { n: 2 })).toBe('Stage 2');
   });
 
   it('leaves missing params untouched', () => {
@@ -681,6 +725,14 @@ describe('i18n', () => {
   it('falls back to zh and then to the key', () => {
     expect(t('save', 'fr')).toBe('保存');
     expect(t('unknown_key_xyz', 'en')).toBe('unknown_key_xyz');
+  });
+
+  it('includes the new stage and sticker strings', () => {
+    expect(t('road', 'zh')).toBe('我的成长路');
+    expect(t('road', 'en')).toBe('My road');
+    expect(t('newSticker', 'zh')).toBe('新贴纸！');
+    expect(t('parentSettings', 'en')).toBe('Parent settings');
+    expect(t('unlockStage3', 'zh')).toBe('悬挂几秒解锁第3关');
   });
 });
 
@@ -719,19 +771,27 @@ describe('seed', () => {
     }
   });
 
+  it('tells the pull-up three-stage story', () => {
+    const pullup = makeDemoEntries(today, mulberry32(3)).filter((e) => e.exerciseId === 'pullup');
+    expect(pullup.some((e) => typeof e.values.grabs === 'number')).toBe(true);
+    expect(pullup.some((e) => typeof e.values.hang === 'number')).toBe(true);
+    expect(pullup.some((e) => typeof e.values.level === 'number')).toBe(true);
+  });
+
   it('has a gentle upward trend for pull-up hang', () => {
-    const entries = makeDemoEntries(today, mulberry32(3)).filter((e) => e.exerciseId === 'pullup');
-    const first = entries.slice(0, 5);
-    const last = entries.slice(-5);
+    const hangs = makeDemoEntries(today, mulberry32(3))
+      .filter((e) => e.exerciseId === 'pullup' && typeof e.values.hang === 'number');
+    const first = hangs.slice(0, 5);
+    const last = hangs.slice(-5);
     const avg = (list) => list.reduce((sum, e) => sum + e.values.hang, 0) / list.length;
     expect(avg(last)).toBeGreaterThan(avg(first));
   });
 
-  it('keeps run duration close to distance * 7.5', () => {
+  it('stores run duration in seconds with a gentle faster trend', () => {
     const runs = makeDemoEntries(today, mulberry32(1)).filter((e) => e.exerciseId === 'run');
     for (const r of runs) {
-      const expected = r.values.distance * 7.5;
-      expect(Math.abs(r.values.duration - expected)).toBeLessThanOrEqual(expected * 0.1 + 0.05);
+      expect(r.values.duration).toBeGreaterThan(0);
+      expect(r.values.duration).toBeLessThanOrEqual(r.values.distance * 420 * 1.1 + 1);
     }
   });
 
