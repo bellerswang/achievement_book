@@ -70,28 +70,31 @@ export function makeDemoEntries(today, rng = Math.random) {
     if (i < 61 && rng() < 0.18) doPullup = false;
 
     if (doPullup) {
-      if (i <= 24) {
-        // Stage 1: attempts 5, grabs 1 -> 5, unlock stage 2 around day 20.
-        const base = 1 + 4 * (i / 24);
-        const jitter = (rng() - 0.5) * 0.6;
-        const grabs = Math.round(clamp(base + jitter, 1, 5));
-        push('pullup', date, { grabs, attempts: 5 }, 0);
-      } else if (i <= 60) {
+      // Stage 1 challenges every active day (1–3 per day), slowly improving
+      // from ~1/5 to ~4/5, with the per-attempt order stored.
+      const sessions = 1 + Math.floor(rng() * 3);
+      for (let k = 0; k < sessions; k += 1) {
+        const base = 1 + 3.4 * progress;
+        const grabs = Math.round(clamp(base + (rng() - 0.5) * 1.4, 0, 5));
+        const sequence = [1, 1, 1, 1, 1].map((_, j) => (j < grabs ? 1 : 0));
+        for (let j = sequence.length - 1; j > 0; j -= 1) {
+          const r = Math.floor(rng() * (j + 1));
+          [sequence[j], sequence[r]] = [sequence[r], sequence[j]];
+        }
+        push('pullup', date, { grabs, attempts: 5, sequence }, 10 + k);
+      }
+
+      // Later stages (only visible when the parent turns on unlocking).
+      if (i > 24 && i <= 60) {
         // Stage 2: hang 3 -> 18s, crossing 10s around day 50.
         const base = i <= 50 ? 3 + 7 * ((i - 25) / 25) : 10 + 8 * ((i - 50) / 10);
         const jitter = (rng() - 0.5) * 1.2;
         const hang = Math.round(clamp(base + jitter, 2, 20));
         push('pullup', date, { hang }, 0);
-      } else {
+      } else if (i > 60) {
         // Stage 3: levels 25 -> 50 -> 75 in the last two weeks.
         const level = i < 65 ? 25 : i < 70 ? 50 : 75;
         push('pullup', date, { level }, 0);
-      }
-
-      // Keep stage 1 charting after stage 2 unlocks.
-      if (i >= 21 && rng() < 0.35) {
-        const grabs = Math.round(clamp(3 + rng() * 2, 1, 5));
-        push('pullup', date, { grabs, attempts: 5 }, 1);
       }
 
       // Keep stage 2 charting after stage 3 unlocks.

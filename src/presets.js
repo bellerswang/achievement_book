@@ -9,6 +9,9 @@ export const PULLUP_DEFAULTS = {
   attempts: 5,
   stage1Grabs: 4,
   stage2Hang: 10,
+  // For now May stays on stage 1 (challenge mode); the parent can switch
+  // automatic unlocking of the next stage on in the parent area.
+  unlockNext: false,
 };
 
 export const LEVEL_OPTIONS = [

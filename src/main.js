@@ -43,6 +43,15 @@ import { renderCurve } from './chart.js';
 import { celebrate } from './celebrate.js';
 import { makeDemoEntries } from './seed.js';
 import { pullupLevelSvg } from './illustrations.js';
+import {
+  createGrabFlow,
+  recordAttempt,
+  undoAttempt,
+  resetFlow,
+  isComplete,
+  flowToValues,
+  grabFlowHtml,
+} from './grabflow.js';
 
 /* ------------------------------------------------------------------ */
 /* local strings (things the shared i18n table does not carry)         */
@@ -56,6 +65,9 @@ const LOCAL = {
     deleteConfirm: '确定删除这条记录吗？',
     clearConfirm: '确定要清空所有记录吗？',
     noRecords: '还没有记录',
+    goalGrabs: '达标：抓住几下得贴纸',
+    chartBest: '{name}：最好 {pb}',
+    unlockNext: '自动解锁下一关',
     pullupRules: '单杠门槛',
     dec: '减少',
     inc: '增加',
@@ -72,6 +84,9 @@ const LOCAL = {
     deleteConfirm: 'Delete this record?',
     clearConfirm: 'Clear all records?',
     noRecords: 'No records yet',
+    goalGrabs: 'Goal: grabs for a sticker',
+    chartBest: '{name}: best {pb}',
+    unlockNext: 'Unlock next stage automatically',
     pullupRules: 'Pull-up rules',
     dec: 'decrease',
     inc: 'increase',
@@ -483,10 +498,9 @@ function pullupBody(ex) {
   const bestNow = stageBest(ex, sel);
   const tries = attemptsOnDay(state.entries, ex.id, todayStr());
 
-  const aria = T('chartAria', {
+  const aria = L('chartBest', {
     name: `${exName(ex)} ${T('stage', { n: sel })}`,
-    latest: lp.latest ? fmtMetric(metric, lp.latest.value) : '–',
-    pb: best ? fmtMetric(metric, best.value) : '–',
+    pb: bestNow ? `${bestNow.big}${sel === 1 ? '' : bestNow.unit || ''}` : '–',
   });
 
   const svg = renderCurve({
@@ -515,7 +529,7 @@ function pullupBody(ex) {
 
   return `${roadHtml(ex, progress, sel)}
     ${heroHtml(L('best'), bestNow ? bestNow.big : '–', sel === 1 ? '' : bestNow ? bestNow.unit : '', note)}
-    <div class="chart-box">${svg}</div>
+    ${series.length >= 2 ? `<div class="chart-box">${svg}</div>` : ''}
     ${stickersHtml(ex)}`;
 }
 
@@ -545,9 +559,8 @@ function runBody(ex) {
   const cmp = runCompareLast(ex, state.entries);
   const faster = cmp && cmp.distance === sel && cmp.fasterBy ? cmp.fasterBy : null;
 
-  const aria = T('chartAria', {
+  const aria = L('chartBest', {
     name: `${exName(ex)} ${formatDistance(sel, state.lang)}`,
-    latest: latest !== null ? formatDuration(latest) : '–',
     pb: best ? formatDuration(best.seconds) : '–',
   });
 
@@ -571,7 +584,7 @@ function runBody(ex) {
 
   return `${picker}
     ${heroHtml(`${formatDistance(sel, state.lang)} ${T('bestTime')}`, best ? formatDuration(best.seconds) : '–', '', note, 'is-up')}
-    <div class="chart-box">${svg}</div>
+    ${series.length >= 2 ? `<div class="chart-box">${svg}</div>` : ''}
     ${stickersHtml(ex)}`;
 }
 
@@ -582,9 +595,8 @@ function simpleBody(ex) {
   const lp = latestAndPrevious(ex, state.entries, key);
   const series = dailySeries(ex, state.entries, key);
 
-  const aria = T('chartAria', {
+  const aria = L('chartBest', {
     name: exName(ex),
-    latest: lp.latest ? fmtMetric(metric, lp.latest.value) : '–',
     pb: best ? fmtMetric(metric, best.value) : '–',
   });
 
@@ -603,7 +615,7 @@ function simpleBody(ex) {
   });
 
   return `${heroHtml(L('best'), best ? formatValue(metric, best.value) : '–', metricUnit(metric), '')}
-    <div class="chart-box">${svg}</div>
+    ${series.length >= 2 ? `<div class="chart-box">${svg}</div>` : ''}
     ${stickersHtml(ex)}`;
 }
 
@@ -729,8 +741,12 @@ function parentHtml() {
     <section class="pcard">
       <h2 class="pcard-title">${esc(L('pullupRules'))}</h2>
       ${prowHtml('attempts', T('attemptsPerSession'), String(pullup.attempts), '')}
-      ${prowHtml('stage1Grabs', T('unlockStage2'), `${pullup.stage1Grabs} / ${pullup.attempts}`, '')}
-      ${prowHtml('stage2Hang', T('unlockStage3'), String(pullup.stage2Hang), T('seconds'))}
+      ${prowHtml('stage1Grabs', L('goalGrabs'), `${pullup.stage1Grabs} / ${pullup.attempts}`, '')}
+      <button type="button" class="switch-row" role="switch" aria-checked="${pullup.unlockNext === true}" data-toggle-unlock="1">
+        <span>${esc(L('unlockNext'))}</span>
+        <span class="switch" aria-hidden="true"><span class="knob"></span></span>
+      </button>
+      ${pullup.unlockNext ? prowHtml('stage2Hang', T('unlockStage3'), String(pullup.stage2Hang), T('seconds')) : ''}
     </section>
 
     <section class="pcard">
@@ -903,18 +919,10 @@ function numberFieldHtml(key, label, value, unit, opts = {}) {
 }
 
 function tryGridHtml() {
-  const attempts = state.settings.pullup.attempts;
-  const grabs = Array.isArray(rs.grabs) ? rs.grabs : [];
-  const count = grabs.slice(0, attempts).filter(Boolean).length;
-  const buttons = [];
-  for (let i = 0; i < attempts; i += 1) {
-    const on = !!grabs[i];
-    buttons.push(`<button type="button" class="try-btn" data-r-try="${i}" aria-pressed="${on}" aria-label="${esc(
-      T('tryN', { n: i + 1 })
-    )}">${on ? '<span aria-hidden="true">✋✓</span>' : `<span aria-hidden="true">${i + 1}</span>`}</button>`);
-  }
-  return `<p class="try-live" data-try-live>${esc(T('grabbed'))} ${count} / ${attempts}</p>
-    <div class="try-grid" role="group" aria-label="${esc(T('grabbed'))}">${buttons.join('')}</div>`;
+  // Challenge flow: tap 抓住 / 没抓住 for each attempt; dots fill in order and
+  // the result (e.g. 3 / 5) appears automatically after the last attempt.
+  if (!rs.flow) rs.flow = createGrabFlow(state.settings.pullup.attempts);
+  return grabFlowHtml(rs.flow, { lang: state.lang, esc });
 }
 
 function levelHtml() {
@@ -1046,7 +1054,7 @@ function recordSheetHtml() {
 
 function prefillStage(r, ex, n) {
   r.stage = n;
-  r.grabs = [];
+  r.flow = createGrabFlow(state.settings.pullup.attempts);
   r.values.hang = '';
   r.values.level = '';
   r.showExact = false;
@@ -1100,7 +1108,7 @@ function makeRecordState(ex) {
   const r = {
     sport: ex.id,
     stage: 1,
-    grabs: [],
+    flow: createGrabFlow(state.settings.pullup.attempts),
     values: {
       hang: '',
       level: '',
@@ -1157,9 +1165,7 @@ function buildValues(ex) {
   if (!ex || !rs) return null;
   if (ex.id === 'pullup') {
     if (rs.stage === 1) {
-      const attempts = state.settings.pullup.attempts;
-      const grabs = (rs.grabs || []).slice(0, attempts).filter(Boolean).length;
-      return { grabs, attempts };
+      return rs.flow ? flowToValues(rs.flow) : null; // only once all attempts are done
     }
     if (rs.stage === 2) {
       const hang = parseNum(rs.values.hang);
@@ -1247,23 +1253,20 @@ function wireRecordSheet(api) {
       return;
     }
 
-    const tryBtn = target.closest('[data-r-try]');
-    if (tryBtn) {
-      const idx = Number(tryBtn.dataset.rTry);
-      if (!Number.isInteger(idx)) return;
-      if (!Array.isArray(rs.grabs)) rs.grabs = [];
-      rs.grabs[idx] = !rs.grabs[idx];
-      const on = !!rs.grabs[idx];
-      tryBtn.setAttribute('aria-pressed', String(on));
-      tryBtn.innerHTML = on
-        ? '<span aria-hidden="true">✋✓</span>'
-        : `<span aria-hidden="true">${idx + 1}</span>`;
-      const live = api.body.querySelector('[data-try-live]');
-      if (live) {
-        const attempts = state.settings.pullup.attempts;
-        const count = rs.grabs.slice(0, attempts).filter(Boolean).length;
-        live.textContent = `${T('grabbed')} ${count} / ${attempts}`;
-      }
+    const grabBtn = target.closest('[data-r-grab]');
+    if (grabBtn && rs.flow) {
+      rs.flow = recordAttempt(rs.flow, grabBtn.dataset.rGrab === '1');
+      redrawSheet(api, isComplete(rs.flow) ? '[data-r-save]' : `[data-r-grab="${grabBtn.dataset.rGrab}"]`);
+      return;
+    }
+    if (target.closest('[data-r-undo]') && rs.flow) {
+      rs.flow = undoAttempt(rs.flow);
+      redrawSheet(api, '[data-r-grab="1"]');
+      return;
+    }
+    if (target.closest('[data-r-reset]') && rs.flow) {
+      rs.flow = resetFlow(rs.flow);
+      redrawSheet(api, '[data-r-grab="1"]');
       return;
     }
 
@@ -1390,7 +1393,11 @@ async function saveRecord() {
   if (newStamps.length) {
     celebrate(state.celebration);
     vibrate([30, 40, 30]);
-    const first = newStamps[0];
+    // Show the most meaningful new sticker: goal > personal best > level > stage.
+    const rank = { goal: 0, pb: 1, level: 2, stage: 3 };
+    const first = newStamps
+      .slice()
+      .sort((a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9))[0];
     const label = state.lang === 'en' ? first.labelEn || first.label : first.label;
     const value = state.lang === 'en' ? first.valueTextEn || first.valueText : first.valueText;
     toast(`${T('newSticker')} ${first.icon || ''} ${label} ${value}`.replace(/\s+/g, ' ').trim());
@@ -1438,6 +1445,13 @@ function onLang(lang) {
   setSetting('lang', next);
   document.documentElement.lang = next === 'en' ? 'en' : 'zh-CN';
   render();
+}
+
+function onToggleUnlock() {
+  const next = { ...state.settings.pullup, unlockNext: !state.settings.pullup.unlockNext };
+  state.settings.pullup = pullupSettings(next);
+  setSetting('pullup', state.settings.pullup);
+  renderAndFocus('[data-toggle-unlock]');
 }
 
 function onToggleRope() {
@@ -1579,6 +1593,11 @@ async function onAppClick(event) {
   const langBtn = target.closest('[data-lang]');
   if (langBtn) {
     onLang(langBtn.dataset.lang);
+    return;
+  }
+
+  if (target.closest('[data-toggle-unlock]')) {
+    onToggleUnlock();
     return;
   }
 

@@ -18,6 +18,7 @@ import {
   newStampsForSave,
 } from '../src/metrics.js';
 import { makeDemoEntries, mulberry32 } from '../src/seed.js';
+import { dailySeries, attemptsOnDay } from '../src/metrics.js';
 
 const PULLUP = PRESET_EXERCISES.find((e) => e.id === 'pullup');
 const RUN = PRESET_EXERCISES.find((e) => e.id === 'run');
@@ -38,6 +39,9 @@ function makeEntry(exerciseId, date, values, createdAt) {
 /* ------------------------------------------------------------------ */
 /* grabRate / stages                                                   */
 /* ------------------------------------------------------------------ */
+
+// Stage unlocking is opt-in (parent switch); most stage tests run with it on.
+const ON = { unlockNext: true };
 
 describe('grabRate derivation', () => {
   it('rounds grabs / attempts to a whole percentage', () => {
@@ -87,7 +91,9 @@ describe('pullupSettings', () => {
       attempts: 8,
       stage1Grabs: 6,
       stage2Hang: 12,
+      unlockNext: false,
     });
+    expect(pullupSettings({ unlockNext: true }).unlockNext).toBe(true);
   });
 
   it('clamps stage1Grabs to 1..attempts', () => {
@@ -117,7 +123,7 @@ describe('stageProgress', () => {
       makeEntry('pullup', '2024-03-01', { grabs: 2, attempts: 5 }),
       makeEntry('pullup', '2024-03-02', { grabs: 3, attempts: 5 }),
     ];
-    const p2 = stageProgress(PULLUP, entries);
+    const p2 = stageProgress(PULLUP, entries, ON);
     expect(p2.current).toBe(1);
     expect(p2.stages[0]).toMatchObject({
       unlocked: true,
@@ -135,7 +141,7 @@ describe('stageProgress', () => {
       makeEntry('pullup', '2024-03-02', { grabs: 4, attempts: 5 }),
       makeEntry('pullup', '2024-03-03', { grabs: 1, attempts: 5 }),
     ];
-    const p = stageProgress(PULLUP, entries);
+    const p = stageProgress(PULLUP, entries, ON);
     expect(p.current).toBe(2);
     expect(p.stages[1]).toMatchObject({
       n: 2,
@@ -154,7 +160,7 @@ describe('stageProgress', () => {
       makeEntry('pullup', '2024-03-02', { grabs: 4, attempts: 5 }),
       makeEntry('pullup', '2024-03-01', { hang: 5 }),
     ];
-    const p = stageProgress(PULLUP, entries);
+    const p = stageProgress(PULLUP, entries, ON);
     expect(p.stages[1].unlocked).toBe(true);
     expect(p.stages[1].unlockedOn).toBe('2024-03-01');
     expect(p.stages[1].entries).toBe(1);
@@ -167,7 +173,7 @@ describe('stageProgress', () => {
       makeEntry('pullup', '2024-03-02', { hang: 9 }),
       makeEntry('pullup', '2024-03-03', { hang: 10 }),
     ];
-    const p = stageProgress(PULLUP, entries);
+    const p = stageProgress(PULLUP, entries, ON);
     expect(p.current).toBe(3);
     expect(p.stages[2]).toMatchObject({
       n: 3,
@@ -188,6 +194,7 @@ describe('stageProgress', () => {
       makeEntry('pullup', '2024-03-02', { hang: 5 }),
     ];
     const p = stageProgress(PULLUP, entries, {
+      unlockNext: true,
       attempts: 3,
       stage1Grabs: 3,
       stage2Hang: 5,
@@ -199,7 +206,7 @@ describe('stageProgress', () => {
 
   it('lets a stage-3 entry imply stage 2 unlock', () => {
     const entries = [makeEntry('pullup', '2024-03-10', { level: 50 })];
-    const p = stageProgress(PULLUP, entries);
+    const p = stageProgress(PULLUP, entries, ON);
     expect(p.current).toBe(3);
     expect(p.stages[1].unlocked).toBe(true);
     expect(p.stages[1].unlockedOn).toBe('2024-03-10');
@@ -394,11 +401,12 @@ describe('stamps', () => {
     const s4 = makeEntry('pullup', '2024-03-04', { level: 25 });
     const s5 = makeEntry('pullup', '2024-03-05', { level: 75 });
 
-    const list = stamps(PULLUP, [s1, s2, s3, s4, s5]);
+    const list = stamps(PULLUP, [s1, s2, s3, s4, s5], ON);
     expect(list.map((s) => s.id)).toEqual([
       'stage:1',
       'stage:2',
       'stage:3',
+      'goal:grab:1',
       'level:25',
       'level:50',
       'level:75',
@@ -503,7 +511,7 @@ describe('stamps', () => {
 describe('newStampsForSave', () => {
   it('does not emit a PB for the very first record, but does emit stage 1', () => {
     const first = makeEntry('pullup', '2024-03-01', { grabs: 1, attempts: 5 });
-    const created = newStampsForSave(PULLUP, [], first);
+    const created = newStampsForSave(PULLUP, [], first, ON);
     expect(created.map((s) => s.id)).toContain('stage:1');
     expect(created.some((s) => s.kind === 'pb')).toBe(false);
   });
@@ -514,7 +522,7 @@ describe('newStampsForSave', () => {
       makeEntry('pullup', '2024-03-02', { hang: 8 }),
     ];
     const better = makeEntry('pullup', '2024-03-03', { hang: 12 });
-    const created = newStampsForSave(PULLUP, previous, better, { stage2Hang: 20 });
+    const created = newStampsForSave(PULLUP, previous, better, { unlockNext: true, stage2Hang: 20 });
     expect(created.map((s) => s.id)).toContain('pb:hang:12');
   });
 
@@ -524,13 +532,13 @@ describe('newStampsForSave', () => {
       makeEntry('pullup', '2024-03-02', { hang: 12 }),
     ];
     const worse = makeEntry('pullup', '2024-03-03', { hang: 8 });
-    expect(newStampsForSave(PULLUP, previous, worse)).toEqual([]);
+    expect(newStampsForSave(PULLUP, previous, worse, ON)).toEqual([]);
   });
 
   it('emits stage:2 when the grab threshold is reached', () => {
     const previous = [makeEntry('pullup', '2024-03-01', { grabs: 3, attempts: 5 })];
     const entry = makeEntry('pullup', '2024-03-02', { grabs: 4, attempts: 5 });
-    const created = newStampsForSave(PULLUP, previous, entry);
+    const created = newStampsForSave(PULLUP, previous, entry, ON);
     expect(created.map((s) => s.id)).toContain('stage:2');
   });
 
@@ -540,7 +548,7 @@ describe('newStampsForSave', () => {
       makeEntry('pullup', '2024-03-02', { hang: 10 }),
     ];
     const entry = makeEntry('pullup', '2024-03-03', { level: 75 });
-    const created = newStampsForSave(PULLUP, previous, entry);
+    const created = newStampsForSave(PULLUP, previous, entry, ON);
     expect(created.map((s) => s.id)).toContain('level:75');
   });
 });
@@ -560,7 +568,7 @@ describe('demo seed stages', () => {
 
   it('reaches stage 3 with default settings', () => {
     const entries = makeDemoEntries(today, mulberry32(1));
-    const progress = stageProgress(PULLUP, entries);
+    const progress = stageProgress(PULLUP, entries, ON);
     expect(progress.current).toBe(3);
     expect(progress.stages[2].unlocked).toBe(true);
 
@@ -596,5 +604,53 @@ describe('bestSoFarSeries (progress-only curve)', () => {
     const out = bestSoFarSeries(s.slice(2), { priorBest: prior });
     expect(out.map((p) => p.isNewBest)).toEqual([true, false]);
     expect(bestSoFarSeries([{ date: 'x', value: 4 }], { priorBest: 6 })[0]).toMatchObject({ value: 6, isNewBest: false });
+  });
+});
+
+
+describe('challenge mode (stage 1 only, goal stamps)', () => {
+  const ch = (date, grabs, id, sequence) =>
+    ({ ...makeEntry('pullup', date, { grabs, attempts: 5, ...(sequence ? { sequence } : {}) }), id });
+
+  it('does not unlock stage 2 by default even at 5/5', () => {
+    const p = stageProgress(PULLUP, [ch('2024-03-01', 5, 'a')]);
+    expect(p.current).toBe(1);
+    expect(p.stages[1].unlocked).toBe(false);
+    expect(stamps(PULLUP, [ch('2024-03-01', 5, 'a')]).some((s) => s.id === 'stage:2')).toBe(false);
+  });
+
+  it('awards a goal stamp for each challenge reaching >= 4/5', () => {
+    const a = ch('2024-03-01', 3, 'a', [1, 0, 1, 0, 1]);
+    const b = ch('2024-03-01', 4, 'b', [1, 1, 0, 1, 1]);
+    expect(newStampsForSave(PULLUP, [a], b).map((s) => s.id)).toContain('goal:grab:1');
+    const c = ch('2024-03-02', 5, 'c');
+    const fresh = newStampsForSave(PULLUP, [a, b], c);
+    expect(fresh.map((s) => s.id)).toContain('goal:grab:2');
+    const goal = stamps(PULLUP, [a, b, c]).find((s) => s.kind === 'goal');
+    expect(goal.valueText).toBe('4/5 ×2');
+    // a 3/5 after that earns nothing new
+    expect(newStampsForSave(PULLUP, [a, b, c], ch('2024-03-03', 3, 'd'))).toEqual([]);
+  });
+
+  it('keeps several challenges per day; chart uses the best of the day', () => {
+    const list = [ch('2024-03-01', 2, 'a'), ch('2024-03-01', 4, 'b'), ch('2024-03-01', 3, 'c')];
+    const series = dailySeries(PULLUP, list, 'grabRate');
+    expect(series).toEqual([{ date: '2024-03-01', value: 80, count: 3 }]);
+    expect(attemptsOnDay(list, 'pullup', '2024-03-01')).toBe(3);
+  });
+});
+
+describe('locked stages keep their stickers hidden', () => {
+  it('no hang / level stickers while unlocking is off', () => {
+    const list = [
+      makeEntry('pullup', '2024-03-01', { grabs: 2, attempts: 5 }),
+      makeEntry('pullup', '2024-03-02', { hang: 12 }),
+      makeEntry('pullup', '2024-03-03', { level: 50 }),
+    ];
+    const ids = stamps(PULLUP, list).map((s) => s.id);
+    expect(ids.some((id) => id.startsWith('level:') || id.startsWith('pb:hang'))).toBe(false);
+    const on = stamps(PULLUP, list, { unlockNext: true }).map((s) => s.id);
+    expect(on).toContain('level:50');
+    expect(on.some((id) => id.startsWith('pb:hang'))).toBe(true);
   });
 });

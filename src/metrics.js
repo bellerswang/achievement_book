@@ -415,6 +415,7 @@ export function pullupSettings(raw) {
   }
 
   out.stage1Grabs = Math.min(out.attempts, Math.max(1, out.stage1Grabs));
+  if (typeof src.unlockNext === 'boolean') out.unlockNext = src.unlockNext;
   return out;
 }
 
@@ -466,7 +467,7 @@ export function stageProgress(exercise, entries, settingsRaw) {
   if (firstStage2) stage2Candidates.push(firstStage2);
   if (firstStage3) stage2Candidates.push(firstStage3);
 
-  const stage2Unlocked = stage2Candidates.length > 0;
+  const stage2Unlocked = settings.unlockNext === true && stage2Candidates.length > 0;
   const stage2On = stage2Unlocked ? minDateStr(stage2Candidates) : null;
 
   let threshold3 = null;
@@ -784,7 +785,39 @@ export function stamps(exercise, entries, settingsRaw) {
         });
       }
 
-      for (const option of LEVEL_OPTIONS) {
+      // Goal stamp: every stage-1 challenge that reaches the target (default 4/5).
+      // The id carries the count, so each new qualifying challenge earns a
+      // fresh stamp (and a celebration) without filling the page with stickers.
+      const settings = pullupSettings(settingsRaw);
+      const goalHits = list.filter((entry) => {
+        if (stageOfEntry(entry) !== 1) return false;
+        const v = entry.values || {};
+        const grabs = toNum(v.grabs);
+        const rawAttempts = toNum(v.attempts);
+        const attempts = rawAttempts !== null && rawAttempts > 0 ? rawAttempts : settings.attempts;
+        return grabs !== null && attempts > 0 && grabs / attempts >= settings.stage1Grabs / settings.attempts;
+      });
+      if (goalHits.length) {
+        const last = goalHits[goalHits.length - 1];
+        const target = `${settings.stage1Grabs}/${settings.attempts}`;
+        out.push({
+          id: `goal:grab:${goalHits.length}`,
+          kind: 'goal',
+          icon: '🏅',
+          label: '抓杠达标',
+          labelEn: 'Grab goal',
+          valueText: goalHits.length > 1 ? `${target} ×${goalHits.length}` : target,
+          valueTextEn: goalHits.length > 1 ? `${target} ×${goalHits.length}` : target,
+          date: last.date,
+          entryId: last.id,
+        });
+      }
+
+      // Later-stage stickers only appear once that stage is unlocked.
+      const stage2Open = !!(progress.stages[1] && progress.stages[1].unlocked);
+      const stage3Open = !!(progress.stages[2] && progress.stages[2].unlocked);
+
+      for (const option of stage3Open ? LEVEL_OPTIONS : []) {
         const firstReached = list.find((entry) => {
           const level = toNum((entry.values || {}).level);
           return level !== null && level >= option.value;
@@ -822,7 +855,7 @@ export function stamps(exercise, entries, settingsRaw) {
         });
       }
 
-      const bestHang = personalBest(exercise, entries, 'hang');
+      const bestHang = stage2Open ? personalBest(exercise, entries, 'hang') : null;
       if (bestHang) {
         const hangMetric = metricOf(exercise, 'hang');
         const hangText = formatValue(hangMetric, bestHang.value);
